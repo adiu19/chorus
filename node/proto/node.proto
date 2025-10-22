@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+package node;
+
+option go_package = "./proto";
+
+// Basic RPC interface for chorus nodes
+service NodeService {
+  // Ping checks if the node is alive
+  rpc Ping(PingRequest) returns (PingResponse);
+  
+  // Echo sends a message and gets a response
+  rpc Echo(EchoRequest) returns (EchoResponse);
+}
+
+message PingRequest {
+  string node_id = 1;
+}
+
+message PingResponse {
+  string node_id = 1;
+  int64 timestamp = 2;
+}
+
+message EchoRequest {
+  string node_id = 1;
+  string message = 2;
+  int32 hop_count = 3;
+}
+
+message EchoResponse {
+  string node_id = 1;
+  string message = 2;
+  int32 hop_count = 3;
+}

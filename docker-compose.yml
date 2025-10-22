@@ -1,0 +1,43 @@
+services:
+  node1:
+    build:
+      context: ./node
+      dockerfile: Dockerfile
+    container_name: chorus-node1
+    environment:
+      - NODE_ID=node1
+      - PORT=8001
+    ports:
+      - "8001:8001"
+    networks:
+      - chorus-network
+
+  node2:
+    build:
+      context: ./node
+      dockerfile: Dockerfile
+    container_name: chorus-node2
+    environment:
+      - NODE_ID=node2
+      - PORT=8002
+    ports:
+      - "8002:8002"
+    networks:
+      - chorus-network
+
+  node3:
+    build:
+      context: ./node
+      dockerfile: Dockerfile
+    container_name: chorus-node3
+    environment:
+      - NODE_ID=node3
+      - PORT=8003
+    ports:
+      - "8003:8003"
+    networks:
+      - chorus-network
+
+networks:
+  chorus-network:
+    driver: bridge
