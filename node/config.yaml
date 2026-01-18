@@ -1,0 +1,9 @@
+# Cluster configuration for chorus nodes
+
+# Seeds are the initial nodes to contact when joining the cluster.
+# Each node should have at least one seed configured.
+# Format: "host:port"
+seeds:
+  - "localhost:8001"
+  - "localhost:8002"
+  - "localhost:8003"

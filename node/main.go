@@ -10,23 +10,27 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/chorus/node/config"
 	pb "github.com/chorus/node/proto"
 	"google.golang.org/grpc"
 )
 
 type Node struct {
 	pb.UnimplementedNodeServiceServer
-	id   string
-	port string
+	id    string
+	port  string
+	seeds []string
 }
 
-func NewNode() *Node {
+func NewNode(seeds []string) *Node {
 	node := &Node{
-		id:   getEnv("NODE_ID", "node1"),
-		port: getEnv("PORT", "8001"),
+		id:    getEnv("NODE_ID", "node1"),
+		port:  getEnv("PORT", "8001"),
+		seeds: seeds,
 	}
 
 	log.Printf("[%s] Node starting on :%s", node.id, node.port)
+	log.Printf("[%s] Seeds: %v", node.id, node.seeds)
 
 	return node
 }
@@ -54,7 +58,13 @@ func (n *Node) Echo(ctx context.Context, req *pb.EchoRequest) (*pb.EchoResponse,
 }
 
 func main() {
-	node := NewNode()
+	// Load configuration
+	cfg, err := config.Load("config.yaml")
+	if err != nil {
+		log.Fatalf("Failed to load config: %v", err)
+	}
+
+	node := NewNode(cfg.Seeds)
 
 	lis, err := net.Listen("tcp", ":"+node.port)
 	if err != nil {
