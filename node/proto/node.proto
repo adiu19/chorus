@@ -15,11 +15,13 @@ service NodeService {
 
 message PingRequest {
   string node_id = 1;
+  repeated string known_peers = 2;  // peers the sender knows about (host:port)
 }
 
 message PingResponse {
   string node_id = 1;
   int64 timestamp = 2;
+  repeated string known_peers = 3;  // peers the responder knows about (host:port)
 }
 
 message EchoRequest {

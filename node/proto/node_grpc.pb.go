@@ -27,7 +27,7 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// NodeService defines the basic RPC interface for chorus nodes
+// Basic RPC interface for chorus nodes
 type NodeServiceClient interface {
 	// Ping checks if the node is alive
 	Ping(ctx context.Context, in *PingRequest, opts ...grpc.CallOption) (*PingResponse, error)
@@ -67,7 +67,7 @@ func (c *nodeServiceClient) Echo(ctx context.Context, in *EchoRequest, opts ...g
 // All implementations must embed UnimplementedNodeServiceServer
 // for forward compatibility.
 //
-// NodeService defines the basic RPC interface for chorus nodes
+// Basic RPC interface for chorus nodes
 type NodeServiceServer interface {
 	// Ping checks if the node is alive
 	Ping(context.Context, *PingRequest) (*PingResponse, error)

@@ -24,6 +24,7 @@ const (
 type PingRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	NodeId        string                 `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
+	KnownPeers    []string               `protobuf:"bytes,2,rep,name=known_peers,json=knownPeers,proto3" json:"known_peers,omitempty"` // peers the sender knows about (host:port)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -65,10 +66,18 @@ func (x *PingRequest) GetNodeId() string {
 	return ""
 }
 
+func (x *PingRequest) GetKnownPeers() []string {
+	if x != nil {
+		return x.KnownPeers
+	}
+	return nil
+}
+
 type PingResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	NodeId        string                 `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
 	Timestamp     int64                  `protobuf:"varint,2,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
+	KnownPeers    []string               `protobuf:"bytes,3,rep,name=known_peers,json=knownPeers,proto3" json:"known_peers,omitempty"` // peers the responder knows about (host:port)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -115,6 +124,13 @@ func (x *PingResponse) GetTimestamp() int64 {
 		return x.Timestamp
 	}
 	return 0
+}
+
+func (x *PingResponse) GetKnownPeers() []string {
+	if x != nil {
+		return x.KnownPeers
+	}
+	return nil
 }
 
 type EchoRequest struct {
@@ -241,12 +257,16 @@ var File_proto_node_proto protoreflect.FileDescriptor
 
 const file_proto_node_proto_rawDesc = "" +
 	"\n" +
-	"\x10proto/node.proto\x12\x04node\"&\n" +
+	"\x10proto/node.proto\x12\x04node\"G\n" +
 	"\vPingRequest\x12\x17\n" +
-	"\anode_id\x18\x01 \x01(\tR\x06nodeId\"E\n" +
+	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x1f\n" +
+	"\vknown_peers\x18\x02 \x03(\tR\n" +
+	"knownPeers\"f\n" +
 	"\fPingResponse\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x1c\n" +
-	"\ttimestamp\x18\x02 \x01(\x03R\ttimestamp\"]\n" +
+	"\ttimestamp\x18\x02 \x01(\x03R\ttimestamp\x12\x1f\n" +
+	"\vknown_peers\x18\x03 \x03(\tR\n" +
+	"knownPeers\"]\n" +
 	"\vEchoRequest\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x12\x1b\n" +
