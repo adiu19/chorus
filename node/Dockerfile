@@ -16,9 +16,12 @@ RUN protoc --go_out=. --go_opt=paths=source_relative \
            --go-grpc_out=. --go-grpc_opt=paths=source_relative \
            proto/node.proto
 
-COPY main.go ./
+COPY *.go ./
+COPY config/ ./config/
+COPY cluster/ ./cluster/
+COPY ring/ ./ring/
 
-RUN CGO_ENABLED=0 GOOS=linux go build -o chorus-node main.go
+RUN CGO_ENABLED=0 GOOS=linux go build -o chorus-node .
 
 # Runtime stage
 FROM alpine:latest
@@ -28,6 +31,7 @@ RUN apk --no-cache add ca-certificates
 WORKDIR /app
 
 COPY --from=builder /build/chorus-node .
+COPY config.yaml .
 
 EXPOSE 8001
 

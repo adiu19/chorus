@@ -2,36 +2,31 @@
 # setup-chorus-tmux.sh
 
 SESSION="chorus"
+NODE_DIR="$HOME/Documents/code/chorus/node"
 
 # Kill existing session if exists
 tmux kill-session -t $SESSION 2>/dev/null
 
 # Create new session with first pane
-tmux new-session -d -s $SESSION
+tmux new-session -d -s $SESSION -c "$NODE_DIR"
 
-# Create a clean 2x2 grid layout
-# Split horizontally (top and bottom)
-tmux split-window -v -t $SESSION:0
-
-# Split left side vertically (top-left and bottom-left)
+# Create a 2x2 grid layout
+tmux split-window -v -t $SESSION:0 -c "$NODE_DIR"
 tmux select-pane -t $SESSION:0.0
-tmux split-window -h
-
-# Split right side vertically (top-right and bottom-right)
+tmux split-window -h -c "$NODE_DIR"
 tmux select-pane -t $SESSION:0.2
-tmux split-window -h
+tmux split-window -h -c "$NODE_DIR"
 
-# Now we have a 2x2 grid:
-# Pane 0 (top-left), Pane 1 (top-right)
-# Pane 2 (bottom-left), Pane 3 (bottom-right)
+# Layout:
+# Pane 0 (top-left)     │ Pane 1 (top-right)
+# Pane 2 (bottom-left)  │ Pane 3 (bottom-right)
 
-# Send commands to each pane
-tmux send-keys -t $SESSION:0.0 'docker logs -f chorus-node1' C-m
-tmux send-keys -t $SESSION:0.1 'docker logs -f chorus-node2' C-m
-tmux send-keys -t $SESSION:0.2 'docker logs -f chorus-node3' C-m
-tmux send-keys -t $SESSION:0.3 'cd ~/Documents/code/chorus' C-m
+# Run nodes in first 3 panes
+tmux send-keys -t $SESSION:0.0 'make run-node1' C-m
+tmux send-keys -t $SESSION:0.1 'make run-node2' C-m
+tmux send-keys -t $SESSION:0.2 'make run-node3' C-m
 
-# Select the command pane (bottom-right)
+# Pane 3 is your command shell
 tmux select-pane -t $SESSION:0.3
 
 # Attach to session
