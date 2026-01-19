@@ -37,16 +37,13 @@ func NewPeerList(seeds []string) *PeerList {
 	return pl
 }
 
-// Add adds a new peer or updates an existing one.
-// If the peer exists, it updates LastSeen and marks it alive.
+// Add adds a new peer if it doesn't exist.
+// Does not modify existing peers - use MarkAlive for that.
 func (pl *PeerList) Add(addr string) {
 	pl.mu.Lock()
 	defer pl.mu.Unlock()
 
-	if p, exists := pl.peers[addr]; exists {
-		p.LastSeen = time.Now().Unix()
-		p.IsAlive = true
-	} else {
+	if _, exists := pl.peers[addr]; !exists {
 		pl.peers[addr] = &Peer{
 			Addr:     addr,
 			LastSeen: time.Now().Unix(),

@@ -6,13 +6,13 @@ build:
 
 # Run individual nodes
 run-node1: build
-	NODE_ID=node1 PORT=8001 ./chorus-node
+	NODE_ID=node1 PORT=8010 ./chorus-node
 
 run-node2: build
-	NODE_ID=node2 PORT=8002 ./chorus-node
+	NODE_ID=node2 PORT=8011 ./chorus-node
 
 run-node3: build
-	NODE_ID=node3 PORT=8003 ./chorus-node
+	NODE_ID=node3 PORT=8012 ./chorus-node
 
 # Clean up
 clean:

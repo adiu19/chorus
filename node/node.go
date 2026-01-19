@@ -119,7 +119,7 @@ func (n *Node) gossipOnce() {
 		n.peers.Add(addr)
 	}
 
-	log.Printf("[%s] Gossiped with %s, now know %d peers", n.ID, peer, len(n.peers.GetAddresses()))
+	log.Printf("[%s] Gossiped with %s, now know %d peers (%d alive)", n.ID, peer, len(n.peers.GetAddresses()), len(n.peers.GetAlive()))
 }
 
 // pickRandomPeer returns a random peer address, excluding self.
