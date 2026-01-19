@@ -1,11 +1,13 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/chorus/node/config"
 	pb "github.com/chorus/node/proto"
@@ -31,11 +33,16 @@ func main() {
 
 	log.Printf("[%s] gRPC server listening on :%s", node.id, node.port)
 
+	// Start gossip in background
+	ctx, cancel := context.WithCancel(context.Background())
+	go node.StartGossip(ctx, 5*time.Second)
+
 	go func() {
 		sigCh := make(chan os.Signal, 1)
 		signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
 		<-sigCh
 		log.Printf("[%s] Shutting down gracefully...", node.id)
+		cancel() // stop gossip
 		grpcServer.GracefulStop()
 	}()
 
