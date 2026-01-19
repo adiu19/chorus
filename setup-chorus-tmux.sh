@@ -2,20 +2,20 @@
 # setup-chorus-tmux.sh
 
 SESSION="chorus"
-NODE_DIR="$HOME/Documents/code/chorus/node"
+PROJECT_DIR="$HOME/Documents/code/chorus"
 
 # Kill existing session if exists
 tmux kill-session -t $SESSION 2>/dev/null
 
 # Create new session with first pane
-tmux new-session -d -s $SESSION -c "$NODE_DIR"
+tmux new-session -d -s $SESSION -c "$PROJECT_DIR"
 
 # Create a 2x2 grid layout
-tmux split-window -v -t $SESSION:0 -c "$NODE_DIR"
+tmux split-window -v -t $SESSION:0 -c "$PROJECT_DIR"
 tmux select-pane -t $SESSION:0.0
-tmux split-window -h -c "$NODE_DIR"
+tmux split-window -h -c "$PROJECT_DIR"
 tmux select-pane -t $SESSION:0.2
-tmux split-window -h -c "$NODE_DIR"
+tmux split-window -h -c "$PROJECT_DIR"
 
 # Layout:
 # Pane 0 (top-left)     │ Pane 1 (top-right)

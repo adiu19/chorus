@@ -1,4 +1,4 @@
-.PHONY: build run-node1 run-node2 run-node3 run-all clean
+.PHONY: build run-node1 run-node2 run-node3 clean
 
 # Build the binary
 build:

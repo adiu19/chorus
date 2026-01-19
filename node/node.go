@@ -1,42 +1,41 @@
-package main
+package node
 
 import (
 	"context"
 	"fmt"
 	"log"
 	"math/rand"
-	"os"
 	"time"
 
-	"github.com/chorus/node/cluster"
-	pb "github.com/chorus/node/proto"
+	"github.com/chorus/cluster"
+	pb "github.com/chorus/proto"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
 
 type Node struct {
 	pb.UnimplementedNodeServiceServer
-	id    string
-	port  string
+	ID    string
+	Port  string
 	peers *cluster.PeerList
 }
 
-func NewNode(seeds []string) *Node {
+func NewNode(id, port string, seeds []string) *Node {
 	node := &Node{
-		id:    getEnv("NODE_ID", "node1"),
-		port:  getEnv("PORT", "8001"),
+		ID:    id,
+		Port:  port,
 		peers: cluster.NewPeerList(seeds),
 	}
 
-	log.Printf("[%s] Node starting on :%s", node.id, node.port)
-	log.Printf("[%s] Initial peers: %v", node.id, node.peers.GetAddresses())
+	log.Printf("[%s] Node starting on :%s", node.ID, node.Port)
+	log.Printf("[%s] Initial peers: %v", node.ID, node.peers.GetAddresses())
 
 	return node
 }
 
 // Ping RPC - also exchanges peer lists for gossip
 func (n *Node) Ping(ctx context.Context, req *pb.PingRequest) (*pb.PingResponse, error) {
-	log.Printf("[%s] Received Ping from %s with %d peers", n.id, req.NodeId, len(req.KnownPeers))
+	log.Printf("[%s] Received Ping from %s with %d peers", n.ID, req.NodeId, len(req.KnownPeers))
 
 	// Merge incoming peers into our list
 	for _, addr := range req.KnownPeers {
@@ -44,7 +43,7 @@ func (n *Node) Ping(ctx context.Context, req *pb.PingRequest) (*pb.PingResponse,
 	}
 
 	return &pb.PingResponse{
-		NodeId:     n.id,
+		NodeId:     n.ID,
 		Timestamp:  time.Now().Unix(),
 		KnownPeers: n.peers.GetAddresses(),
 	}, nil
@@ -53,11 +52,11 @@ func (n *Node) Ping(ctx context.Context, req *pb.PingRequest) (*pb.PingResponse,
 // Echo RPC
 func (n *Node) Echo(ctx context.Context, req *pb.EchoRequest) (*pb.EchoResponse, error) {
 	log.Printf("[%s] Received Echo from %s: '%s' (hop %d)",
-		n.id, req.NodeId, req.Message, req.HopCount)
+		n.ID, req.NodeId, req.Message, req.HopCount)
 
 	return &pb.EchoResponse{
-		NodeId:   n.id,
-		Message:  fmt.Sprintf("echo from %s: %s", n.id, req.Message),
+		NodeId:   n.ID,
+		Message:  fmt.Sprintf("echo from %s: %s", n.ID, req.Message),
 		HopCount: req.HopCount + 1,
 	}, nil
 }
@@ -69,12 +68,12 @@ func (n *Node) StartGossip(ctx context.Context, interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
-	log.Printf("[%s] Starting gossip with interval %v", n.id, interval)
+	log.Printf("[%s] Starting gossip with interval %v", n.ID, interval)
 
 	for {
 		select {
 		case <-ctx.Done():
-			log.Printf("[%s] Gossip stopped", n.id)
+			log.Printf("[%s] Gossip stopped", n.ID)
 			return
 		case <-ticker.C:
 			n.gossipOnce()
@@ -95,7 +94,7 @@ func (n *Node) gossipOnce() {
 	// Connect to peer
 	conn, err := grpc.NewClient(peer, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
-		log.Printf("[%s] Failed to connect to %s: %v", n.id, peer, err)
+		log.Printf("[%s] Failed to connect to %s: %v", n.ID, peer, err)
 		n.peers.MarkDead(peer)
 		return
 	}
@@ -105,11 +104,11 @@ func (n *Node) gossipOnce() {
 
 	// Send ping with our known peers
 	resp, err := client.Ping(ctx, &pb.PingRequest{
-		NodeId:     n.id,
+		NodeId:     n.ID,
 		KnownPeers: n.peers.GetAddresses(),
 	})
 	if err != nil {
-		log.Printf("[%s] Ping to %s failed: %v", n.id, peer, err)
+		log.Printf("[%s] Ping to %s failed: %v", n.ID, peer, err)
 		n.peers.MarkDead(peer)
 		return
 	}
@@ -120,12 +119,12 @@ func (n *Node) gossipOnce() {
 		n.peers.Add(addr)
 	}
 
-	log.Printf("[%s] Gossiped with %s, now know %d peers", n.id, peer, len(n.peers.GetAddresses()))
+	log.Printf("[%s] Gossiped with %s, now know %d peers", n.ID, peer, len(n.peers.GetAddresses()))
 }
 
 // pickRandomPeer returns a random peer address, excluding self.
 func (n *Node) pickRandomPeer() string {
-	selfAddr := "localhost:" + n.port
+	selfAddr := "localhost:" + n.Port
 
 	addrs := n.peers.GetAddresses()
 	candidates := make([]string, 0, len(addrs))
@@ -140,12 +139,4 @@ func (n *Node) pickRandomPeer() string {
 	}
 
 	return candidates[rand.Intn(len(candidates))]
-}
-
-// getEnv returns the environment variable value or a default.
-func getEnv(key, defaultValue string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return defaultValue
 }
