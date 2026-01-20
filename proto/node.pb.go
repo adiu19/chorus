@@ -24,7 +24,7 @@ const (
 type PingRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	NodeId        string                 `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
-	KnownPeers    []string               `protobuf:"bytes,2,rep,name=known_peers,json=knownPeers,proto3" json:"known_peers,omitempty"` // peers the sender knows about (host:port)
+	Heartbeats    map[string]int64       `protobuf:"bytes,2,rep,name=heartbeats,proto3" json:"heartbeats,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value"` // peer address -> heartbeat counter
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -66,9 +66,9 @@ func (x *PingRequest) GetNodeId() string {
 	return ""
 }
 
-func (x *PingRequest) GetKnownPeers() []string {
+func (x *PingRequest) GetHeartbeats() map[string]int64 {
 	if x != nil {
-		return x.KnownPeers
+		return x.Heartbeats
 	}
 	return nil
 }
@@ -77,7 +77,7 @@ type PingResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	NodeId        string                 `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
 	Timestamp     int64                  `protobuf:"varint,2,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
-	KnownPeers    []string               `protobuf:"bytes,3,rep,name=known_peers,json=knownPeers,proto3" json:"known_peers,omitempty"` // peers the responder knows about (host:port)
+	Heartbeats    map[string]int64       `protobuf:"bytes,3,rep,name=heartbeats,proto3" json:"heartbeats,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value"` // peer address -> heartbeat counter (merged)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -126,9 +126,9 @@ func (x *PingResponse) GetTimestamp() int64 {
 	return 0
 }
 
-func (x *PingResponse) GetKnownPeers() []string {
+func (x *PingResponse) GetHeartbeats() map[string]int64 {
 	if x != nil {
-		return x.KnownPeers
+		return x.Heartbeats
 	}
 	return nil
 }
@@ -257,16 +257,24 @@ var File_proto_node_proto protoreflect.FileDescriptor
 
 const file_proto_node_proto_rawDesc = "" +
 	"\n" +
-	"\x10proto/node.proto\x12\x04node\"G\n" +
+	"\x10proto/node.proto\x12\x04node\"\xa8\x01\n" +
 	"\vPingRequest\x12\x17\n" +
-	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x1f\n" +
-	"\vknown_peers\x18\x02 \x03(\tR\n" +
-	"knownPeers\"f\n" +
+	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12A\n" +
+	"\n" +
+	"heartbeats\x18\x02 \x03(\v2!.node.PingRequest.HeartbeatsEntryR\n" +
+	"heartbeats\x1a=\n" +
+	"\x0fHeartbeatsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\x03R\x05value:\x028\x01\"\xc8\x01\n" +
 	"\fPingResponse\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x1c\n" +
-	"\ttimestamp\x18\x02 \x01(\x03R\ttimestamp\x12\x1f\n" +
-	"\vknown_peers\x18\x03 \x03(\tR\n" +
-	"knownPeers\"]\n" +
+	"\ttimestamp\x18\x02 \x01(\x03R\ttimestamp\x12B\n" +
+	"\n" +
+	"heartbeats\x18\x03 \x03(\v2\".node.PingResponse.HeartbeatsEntryR\n" +
+	"heartbeats\x1a=\n" +
+	"\x0fHeartbeatsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\x03R\x05value:\x028\x01\"]\n" +
 	"\vEchoRequest\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x12\x1b\n" +
@@ -291,23 +299,27 @@ func file_proto_node_proto_rawDescGZIP() []byte {
 	return file_proto_node_proto_rawDescData
 }
 
-var file_proto_node_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_proto_node_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_proto_node_proto_goTypes = []any{
 	(*PingRequest)(nil),  // 0: node.PingRequest
 	(*PingResponse)(nil), // 1: node.PingResponse
 	(*EchoRequest)(nil),  // 2: node.EchoRequest
 	(*EchoResponse)(nil), // 3: node.EchoResponse
+	nil,                  // 4: node.PingRequest.HeartbeatsEntry
+	nil,                  // 5: node.PingResponse.HeartbeatsEntry
 }
 var file_proto_node_proto_depIdxs = []int32{
-	0, // 0: node.NodeService.Ping:input_type -> node.PingRequest
-	2, // 1: node.NodeService.Echo:input_type -> node.EchoRequest
-	1, // 2: node.NodeService.Ping:output_type -> node.PingResponse
-	3, // 3: node.NodeService.Echo:output_type -> node.EchoResponse
-	2, // [2:4] is the sub-list for method output_type
-	0, // [0:2] is the sub-list for method input_type
-	0, // [0:0] is the sub-list for extension type_name
-	0, // [0:0] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	4, // 0: node.PingRequest.heartbeats:type_name -> node.PingRequest.HeartbeatsEntry
+	5, // 1: node.PingResponse.heartbeats:type_name -> node.PingResponse.HeartbeatsEntry
+	0, // 2: node.NodeService.Ping:input_type -> node.PingRequest
+	2, // 3: node.NodeService.Echo:input_type -> node.EchoRequest
+	1, // 4: node.NodeService.Ping:output_type -> node.PingResponse
+	3, // 5: node.NodeService.Echo:output_type -> node.EchoResponse
+	4, // [4:6] is the sub-list for method output_type
+	2, // [2:4] is the sub-list for method input_type
+	2, // [2:2] is the sub-list for extension type_name
+	2, // [2:2] is the sub-list for extension extendee
+	0, // [0:2] is the sub-list for field type_name
 }
 
 func init() { file_proto_node_proto_init() }
@@ -321,7 +333,7 @@ func file_proto_node_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_node_proto_rawDesc), len(file_proto_node_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   4,
+			NumMessages:   6,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

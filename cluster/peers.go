@@ -2,14 +2,16 @@ package cluster
 
 import (
 	"sync"
-	"time"
 )
+
+const StaleThreshold = 3 // mark dead after this many cycles without heartbeat change
 
 // Peer represents a known node in the cluster.
 type Peer struct {
-	Addr     string // host:port
-	LastSeen int64  // unix epoch seconds
-	IsAlive  bool
+	Addr       string // host:port
+	Heartbeat  int64  // the node's heartbeat counter
+	StaleCount int    // cycles since heartbeat changed
+	IsAlive    bool
 }
 
 // PeerList manages the set of known peers in the cluster.
@@ -19,57 +21,112 @@ type PeerList struct {
 }
 
 // NewPeerList creates a PeerList initialized with the given seed addresses.
-// Seeds are marked as alive with LastSeen set to now.
 func NewPeerList(seeds []string) *PeerList {
 	pl := &PeerList{
 		peers: make(map[string]*Peer),
 	}
 
-	now := time.Now().Unix()
 	for _, addr := range seeds {
 		pl.peers[addr] = &Peer{
-			Addr:     addr,
-			LastSeen: now,
-			IsAlive:  true,
+			Addr:       addr,
+			Heartbeat:  0,
+			StaleCount: 0,
+			IsAlive:    true,
 		}
 	}
 
 	return pl
 }
 
-// Add adds a new peer if it doesn't exist.
-// Does not modify existing peers - use MarkAlive for that.
-func (pl *PeerList) Add(addr string) {
+// GetHeartbeats returns a map of peer address -> heartbeat counter.
+func (pl *PeerList) GetHeartbeats() map[string]int64 {
+	pl.mu.RLock()
+	defer pl.mu.RUnlock()
+
+	result := make(map[string]int64, len(pl.peers))
+	for addr, p := range pl.peers {
+		result[addr] = p.Heartbeat
+	}
+	return result
+}
+
+// MergeHeartbeats merges incoming heartbeats with local state.
+// For each peer:
+//   - If incoming heartbeat > local: update and reset stale count
+//   - If incoming heartbeat <= local: increment stale count
+//   - If stale count > threshold: mark dead
+//
+// Returns the merged heartbeats (max of local and incoming).
+func (pl *PeerList) MergeHeartbeats(incoming map[string]int64) map[string]int64 {
 	pl.mu.Lock()
 	defer pl.mu.Unlock()
 
-	if _, exists := pl.peers[addr]; !exists {
-		pl.peers[addr] = &Peer{
-			Addr:     addr,
-			LastSeen: time.Now().Unix(),
-			IsAlive:  true,
+	// First, add any new peers we don't know about
+	for addr, hb := range incoming {
+		if _, exists := pl.peers[addr]; !exists {
+			pl.peers[addr] = &Peer{
+				Addr:       addr,
+				Heartbeat:  hb,
+				StaleCount: 0,
+				IsAlive:    true,
+			}
+		}
+	}
+
+	// Build merged result and update local state
+	result := make(map[string]int64, len(pl.peers))
+
+	for addr, p := range pl.peers {
+		incomingHb, inIncoming := incoming[addr]
+
+		if inIncoming && incomingHb > p.Heartbeat {
+			// Incoming has fresher heartbeat
+			p.Heartbeat = incomingHb
+			p.StaleCount = 0
+			p.IsAlive = true
+		}
+		// Note: we don't increment stale count here - that happens in ProcessResponse
+
+		result[addr] = p.Heartbeat
+	}
+
+	return result
+}
+
+// ProcessResponse processes a ping response, updating stale counts.
+// Call this after receiving a successful ping response.
+func (pl *PeerList) ProcessResponse(responseHeartbeats map[string]int64) {
+	pl.mu.Lock()
+	defer pl.mu.Unlock()
+
+	for addr, p := range pl.peers {
+		incomingHb, inResponse := responseHeartbeats[addr]
+
+		if inResponse && incomingHb > p.Heartbeat {
+			// Fresher heartbeat received
+			p.Heartbeat = incomingHb
+			p.StaleCount = 0
+			p.IsAlive = true
+		} else {
+			// No update for this peer
+			p.StaleCount++
+			if p.StaleCount > StaleThreshold {
+				p.IsAlive = false
+			}
 		}
 	}
 }
 
-// MarkAlive updates LastSeen and sets IsAlive to true for the given peer.
-func (pl *PeerList) MarkAlive(addr string) {
+// IncrementStaleCount increments the stale count for a peer (e.g., on ping failure).
+func (pl *PeerList) IncrementStaleCount(addr string) {
 	pl.mu.Lock()
 	defer pl.mu.Unlock()
 
 	if p, exists := pl.peers[addr]; exists {
-		p.LastSeen = time.Now().Unix()
-		p.IsAlive = true
-	}
-}
-
-// MarkDead sets IsAlive to false for the given peer.
-func (pl *PeerList) MarkDead(addr string) {
-	pl.mu.Lock()
-	defer pl.mu.Unlock()
-
-	if p, exists := pl.peers[addr]; exists {
-		p.IsAlive = false
+		p.StaleCount++
+		if p.StaleCount > StaleThreshold {
+			p.IsAlive = false
+		}
 	}
 }
 
@@ -80,7 +137,7 @@ func (pl *PeerList) GetAll() []Peer {
 
 	result := make([]Peer, 0, len(pl.peers))
 	for _, p := range pl.peers {
-		result = append(result, *p) // copy
+		result = append(result, *p)
 	}
 	return result
 }
@@ -99,7 +156,7 @@ func (pl *PeerList) GetAlive() []Peer {
 	return result
 }
 
-// GetAddresses returns a list of all peer addresses (for use in Ping RPC).
+// GetAddresses returns a list of all peer addresses.
 func (pl *PeerList) GetAddresses() []string {
 	pl.mu.RLock()
 	defer pl.mu.RUnlock()
