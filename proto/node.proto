@@ -6,22 +6,42 @@ option go_package = "./proto";
 
 // Basic RPC interface for chorus nodes
 service NodeService {
-  // Ping checks if the node is alive
+  // Ping exchanges peer information for gossip
   rpc Ping(PingRequest) returns (PingResponse);
-  
+
+  // Fetch returns the owner of a key (for routing)
+  rpc Fetch(FetchRequest) returns (FetchResponse);
+
   // Echo sends a message and gets a response
   rpc Echo(EchoRequest) returns (EchoResponse);
 }
 
+// PeerInfo contains information about a peer node
+message PeerInfo {
+  string id = 1;        // node ID (e.g., "node1")
+  string addr = 2;      // address (e.g., "localhost:8010")
+  int64 heartbeat = 3;  // heartbeat counter
+}
+
 message PingRequest {
   string node_id = 1;
-  map<string, int64> heartbeats = 2;  // peer address -> heartbeat counter
+  repeated PeerInfo peers = 2;  // all known peers including self
 }
 
 message PingResponse {
   string node_id = 1;
   int64 timestamp = 2;
-  map<string, int64> heartbeats = 3;  // peer address -> heartbeat counter (merged)
+  repeated PeerInfo peers = 3;  // merged peer info
+}
+
+message FetchRequest {
+  string key = 1;
+}
+
+message FetchResponse {
+  string owner_id = 1;      // node ID that owns this key
+  string owner_addr = 2;    // address of the owner
+  uint32 ring_fingerprint = 3;  // hash of membership - same fingerprint = same ring
 }
 
 message EchoRequest {

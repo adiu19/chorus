@@ -21,17 +21,78 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// PeerInfo contains information about a peer node
+type PeerInfo struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`                // node ID (e.g., "node1")
+	Addr          string                 `protobuf:"bytes,2,opt,name=addr,proto3" json:"addr,omitempty"`            // address (e.g., "localhost:8010")
+	Heartbeat     int64                  `protobuf:"varint,3,opt,name=heartbeat,proto3" json:"heartbeat,omitempty"` // heartbeat counter
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PeerInfo) Reset() {
+	*x = PeerInfo{}
+	mi := &file_proto_node_proto_msgTypes[0]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PeerInfo) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PeerInfo) ProtoMessage() {}
+
+func (x *PeerInfo) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_node_proto_msgTypes[0]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PeerInfo.ProtoReflect.Descriptor instead.
+func (*PeerInfo) Descriptor() ([]byte, []int) {
+	return file_proto_node_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *PeerInfo) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *PeerInfo) GetAddr() string {
+	if x != nil {
+		return x.Addr
+	}
+	return ""
+}
+
+func (x *PeerInfo) GetHeartbeat() int64 {
+	if x != nil {
+		return x.Heartbeat
+	}
+	return 0
+}
+
 type PingRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	NodeId        string                 `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
-	Heartbeats    map[string]int64       `protobuf:"bytes,2,rep,name=heartbeats,proto3" json:"heartbeats,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value"` // peer address -> heartbeat counter
+	Peers         []*PeerInfo            `protobuf:"bytes,2,rep,name=peers,proto3" json:"peers,omitempty"` // all known peers including self
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *PingRequest) Reset() {
 	*x = PingRequest{}
-	mi := &file_proto_node_proto_msgTypes[0]
+	mi := &file_proto_node_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -43,7 +104,7 @@ func (x *PingRequest) String() string {
 func (*PingRequest) ProtoMessage() {}
 
 func (x *PingRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_node_proto_msgTypes[0]
+	mi := &file_proto_node_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -56,7 +117,7 @@ func (x *PingRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PingRequest.ProtoReflect.Descriptor instead.
 func (*PingRequest) Descriptor() ([]byte, []int) {
-	return file_proto_node_proto_rawDescGZIP(), []int{0}
+	return file_proto_node_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *PingRequest) GetNodeId() string {
@@ -66,9 +127,9 @@ func (x *PingRequest) GetNodeId() string {
 	return ""
 }
 
-func (x *PingRequest) GetHeartbeats() map[string]int64 {
+func (x *PingRequest) GetPeers() []*PeerInfo {
 	if x != nil {
-		return x.Heartbeats
+		return x.Peers
 	}
 	return nil
 }
@@ -77,14 +138,14 @@ type PingResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	NodeId        string                 `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
 	Timestamp     int64                  `protobuf:"varint,2,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
-	Heartbeats    map[string]int64       `protobuf:"bytes,3,rep,name=heartbeats,proto3" json:"heartbeats,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value"` // peer address -> heartbeat counter (merged)
+	Peers         []*PeerInfo            `protobuf:"bytes,3,rep,name=peers,proto3" json:"peers,omitempty"` // merged peer info
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *PingResponse) Reset() {
 	*x = PingResponse{}
-	mi := &file_proto_node_proto_msgTypes[1]
+	mi := &file_proto_node_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -96,7 +157,7 @@ func (x *PingResponse) String() string {
 func (*PingResponse) ProtoMessage() {}
 
 func (x *PingResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_node_proto_msgTypes[1]
+	mi := &file_proto_node_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -109,7 +170,7 @@ func (x *PingResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PingResponse.ProtoReflect.Descriptor instead.
 func (*PingResponse) Descriptor() ([]byte, []int) {
-	return file_proto_node_proto_rawDescGZIP(), []int{1}
+	return file_proto_node_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *PingResponse) GetNodeId() string {
@@ -126,11 +187,115 @@ func (x *PingResponse) GetTimestamp() int64 {
 	return 0
 }
 
-func (x *PingResponse) GetHeartbeats() map[string]int64 {
+func (x *PingResponse) GetPeers() []*PeerInfo {
 	if x != nil {
-		return x.Heartbeats
+		return x.Peers
 	}
 	return nil
+}
+
+type FetchRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *FetchRequest) Reset() {
+	*x = FetchRequest{}
+	mi := &file_proto_node_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FetchRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FetchRequest) ProtoMessage() {}
+
+func (x *FetchRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_node_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FetchRequest.ProtoReflect.Descriptor instead.
+func (*FetchRequest) Descriptor() ([]byte, []int) {
+	return file_proto_node_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *FetchRequest) GetKey() string {
+	if x != nil {
+		return x.Key
+	}
+	return ""
+}
+
+type FetchResponse struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	OwnerId         string                 `protobuf:"bytes,1,opt,name=owner_id,json=ownerId,proto3" json:"owner_id,omitempty"`                          // node ID that owns this key
+	OwnerAddr       string                 `protobuf:"bytes,2,opt,name=owner_addr,json=ownerAddr,proto3" json:"owner_addr,omitempty"`                    // address of the owner
+	RingFingerprint uint32                 `protobuf:"varint,3,opt,name=ring_fingerprint,json=ringFingerprint,proto3" json:"ring_fingerprint,omitempty"` // hash of membership - same fingerprint = same ring
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *FetchResponse) Reset() {
+	*x = FetchResponse{}
+	mi := &file_proto_node_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FetchResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FetchResponse) ProtoMessage() {}
+
+func (x *FetchResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_node_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FetchResponse.ProtoReflect.Descriptor instead.
+func (*FetchResponse) Descriptor() ([]byte, []int) {
+	return file_proto_node_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *FetchResponse) GetOwnerId() string {
+	if x != nil {
+		return x.OwnerId
+	}
+	return ""
+}
+
+func (x *FetchResponse) GetOwnerAddr() string {
+	if x != nil {
+		return x.OwnerAddr
+	}
+	return ""
+}
+
+func (x *FetchResponse) GetRingFingerprint() uint32 {
+	if x != nil {
+		return x.RingFingerprint
+	}
+	return 0
 }
 
 type EchoRequest struct {
@@ -144,7 +309,7 @@ type EchoRequest struct {
 
 func (x *EchoRequest) Reset() {
 	*x = EchoRequest{}
-	mi := &file_proto_node_proto_msgTypes[2]
+	mi := &file_proto_node_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -156,7 +321,7 @@ func (x *EchoRequest) String() string {
 func (*EchoRequest) ProtoMessage() {}
 
 func (x *EchoRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_node_proto_msgTypes[2]
+	mi := &file_proto_node_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -169,7 +334,7 @@ func (x *EchoRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EchoRequest.ProtoReflect.Descriptor instead.
 func (*EchoRequest) Descriptor() ([]byte, []int) {
-	return file_proto_node_proto_rawDescGZIP(), []int{2}
+	return file_proto_node_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *EchoRequest) GetNodeId() string {
@@ -204,7 +369,7 @@ type EchoResponse struct {
 
 func (x *EchoResponse) Reset() {
 	*x = EchoResponse{}
-	mi := &file_proto_node_proto_msgTypes[3]
+	mi := &file_proto_node_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -216,7 +381,7 @@ func (x *EchoResponse) String() string {
 func (*EchoResponse) ProtoMessage() {}
 
 func (x *EchoResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_node_proto_msgTypes[3]
+	mi := &file_proto_node_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -229,7 +394,7 @@ func (x *EchoResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EchoResponse.ProtoReflect.Descriptor instead.
 func (*EchoResponse) Descriptor() ([]byte, []int) {
-	return file_proto_node_proto_rawDescGZIP(), []int{3}
+	return file_proto_node_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *EchoResponse) GetNodeId() string {
@@ -257,24 +422,25 @@ var File_proto_node_proto protoreflect.FileDescriptor
 
 const file_proto_node_proto_rawDesc = "" +
 	"\n" +
-	"\x10proto/node.proto\x12\x04node\"\xa8\x01\n" +
+	"\x10proto/node.proto\x12\x04node\"L\n" +
+	"\bPeerInfo\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
+	"\x04addr\x18\x02 \x01(\tR\x04addr\x12\x1c\n" +
+	"\theartbeat\x18\x03 \x01(\x03R\theartbeat\"L\n" +
 	"\vPingRequest\x12\x17\n" +
-	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12A\n" +
-	"\n" +
-	"heartbeats\x18\x02 \x03(\v2!.node.PingRequest.HeartbeatsEntryR\n" +
-	"heartbeats\x1a=\n" +
-	"\x0fHeartbeatsEntry\x12\x10\n" +
-	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\x03R\x05value:\x028\x01\"\xc8\x01\n" +
+	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12$\n" +
+	"\x05peers\x18\x02 \x03(\v2\x0e.node.PeerInfoR\x05peers\"k\n" +
 	"\fPingResponse\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x1c\n" +
-	"\ttimestamp\x18\x02 \x01(\x03R\ttimestamp\x12B\n" +
+	"\ttimestamp\x18\x02 \x01(\x03R\ttimestamp\x12$\n" +
+	"\x05peers\x18\x03 \x03(\v2\x0e.node.PeerInfoR\x05peers\" \n" +
+	"\fFetchRequest\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\"t\n" +
+	"\rFetchResponse\x12\x19\n" +
+	"\bowner_id\x18\x01 \x01(\tR\aownerId\x12\x1d\n" +
 	"\n" +
-	"heartbeats\x18\x03 \x03(\v2\".node.PingResponse.HeartbeatsEntryR\n" +
-	"heartbeats\x1a=\n" +
-	"\x0fHeartbeatsEntry\x12\x10\n" +
-	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\x03R\x05value:\x028\x01\"]\n" +
+	"owner_addr\x18\x02 \x01(\tR\townerAddr\x12)\n" +
+	"\x10ring_fingerprint\x18\x03 \x01(\rR\x0fringFingerprint\"]\n" +
 	"\vEchoRequest\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x12\x1b\n" +
@@ -282,9 +448,10 @@ const file_proto_node_proto_rawDesc = "" +
 	"\fEchoResponse\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x12\x1b\n" +
-	"\thop_count\x18\x03 \x01(\x05R\bhopCount2k\n" +
+	"\thop_count\x18\x03 \x01(\x05R\bhopCount2\x9d\x01\n" +
 	"\vNodeService\x12-\n" +
-	"\x04Ping\x12\x11.node.PingRequest\x1a\x12.node.PingResponse\x12-\n" +
+	"\x04Ping\x12\x11.node.PingRequest\x1a\x12.node.PingResponse\x120\n" +
+	"\x05Fetch\x12\x12.node.FetchRequest\x1a\x13.node.FetchResponse\x12-\n" +
 	"\x04Echo\x12\x11.node.EchoRequest\x1a\x12.node.EchoResponseB\tZ\a./protob\x06proto3"
 
 var (
@@ -299,24 +466,27 @@ func file_proto_node_proto_rawDescGZIP() []byte {
 	return file_proto_node_proto_rawDescData
 }
 
-var file_proto_node_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_proto_node_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
 var file_proto_node_proto_goTypes = []any{
-	(*PingRequest)(nil),  // 0: node.PingRequest
-	(*PingResponse)(nil), // 1: node.PingResponse
-	(*EchoRequest)(nil),  // 2: node.EchoRequest
-	(*EchoResponse)(nil), // 3: node.EchoResponse
-	nil,                  // 4: node.PingRequest.HeartbeatsEntry
-	nil,                  // 5: node.PingResponse.HeartbeatsEntry
+	(*PeerInfo)(nil),      // 0: node.PeerInfo
+	(*PingRequest)(nil),   // 1: node.PingRequest
+	(*PingResponse)(nil),  // 2: node.PingResponse
+	(*FetchRequest)(nil),  // 3: node.FetchRequest
+	(*FetchResponse)(nil), // 4: node.FetchResponse
+	(*EchoRequest)(nil),   // 5: node.EchoRequest
+	(*EchoResponse)(nil),  // 6: node.EchoResponse
 }
 var file_proto_node_proto_depIdxs = []int32{
-	4, // 0: node.PingRequest.heartbeats:type_name -> node.PingRequest.HeartbeatsEntry
-	5, // 1: node.PingResponse.heartbeats:type_name -> node.PingResponse.HeartbeatsEntry
-	0, // 2: node.NodeService.Ping:input_type -> node.PingRequest
-	2, // 3: node.NodeService.Echo:input_type -> node.EchoRequest
-	1, // 4: node.NodeService.Ping:output_type -> node.PingResponse
-	3, // 5: node.NodeService.Echo:output_type -> node.EchoResponse
-	4, // [4:6] is the sub-list for method output_type
-	2, // [2:4] is the sub-list for method input_type
+	0, // 0: node.PingRequest.peers:type_name -> node.PeerInfo
+	0, // 1: node.PingResponse.peers:type_name -> node.PeerInfo
+	1, // 2: node.NodeService.Ping:input_type -> node.PingRequest
+	3, // 3: node.NodeService.Fetch:input_type -> node.FetchRequest
+	5, // 4: node.NodeService.Echo:input_type -> node.EchoRequest
+	2, // 5: node.NodeService.Ping:output_type -> node.PingResponse
+	4, // 6: node.NodeService.Fetch:output_type -> node.FetchResponse
+	6, // 7: node.NodeService.Echo:output_type -> node.EchoResponse
+	5, // [5:8] is the sub-list for method output_type
+	2, // [2:5] is the sub-list for method input_type
 	2, // [2:2] is the sub-list for extension type_name
 	2, // [2:2] is the sub-list for extension extendee
 	0, // [0:2] is the sub-list for field type_name
@@ -333,7 +503,7 @@ func file_proto_node_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_node_proto_rawDesc), len(file_proto_node_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   6,
+			NumMessages:   7,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

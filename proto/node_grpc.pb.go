@@ -19,8 +19,9 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	NodeService_Ping_FullMethodName = "/node.NodeService/Ping"
-	NodeService_Echo_FullMethodName = "/node.NodeService/Echo"
+	NodeService_Ping_FullMethodName  = "/node.NodeService/Ping"
+	NodeService_Fetch_FullMethodName = "/node.NodeService/Fetch"
+	NodeService_Echo_FullMethodName  = "/node.NodeService/Echo"
 )
 
 // NodeServiceClient is the client API for NodeService service.
@@ -29,8 +30,10 @@ const (
 //
 // Basic RPC interface for chorus nodes
 type NodeServiceClient interface {
-	// Ping checks if the node is alive
+	// Ping exchanges peer information for gossip
 	Ping(ctx context.Context, in *PingRequest, opts ...grpc.CallOption) (*PingResponse, error)
+	// Fetch returns the owner of a key (for routing)
+	Fetch(ctx context.Context, in *FetchRequest, opts ...grpc.CallOption) (*FetchResponse, error)
 	// Echo sends a message and gets a response
 	Echo(ctx context.Context, in *EchoRequest, opts ...grpc.CallOption) (*EchoResponse, error)
 }
@@ -53,6 +56,16 @@ func (c *nodeServiceClient) Ping(ctx context.Context, in *PingRequest, opts ...g
 	return out, nil
 }
 
+func (c *nodeServiceClient) Fetch(ctx context.Context, in *FetchRequest, opts ...grpc.CallOption) (*FetchResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(FetchResponse)
+	err := c.cc.Invoke(ctx, NodeService_Fetch_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *nodeServiceClient) Echo(ctx context.Context, in *EchoRequest, opts ...grpc.CallOption) (*EchoResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(EchoResponse)
@@ -69,8 +82,10 @@ func (c *nodeServiceClient) Echo(ctx context.Context, in *EchoRequest, opts ...g
 //
 // Basic RPC interface for chorus nodes
 type NodeServiceServer interface {
-	// Ping checks if the node is alive
+	// Ping exchanges peer information for gossip
 	Ping(context.Context, *PingRequest) (*PingResponse, error)
+	// Fetch returns the owner of a key (for routing)
+	Fetch(context.Context, *FetchRequest) (*FetchResponse, error)
 	// Echo sends a message and gets a response
 	Echo(context.Context, *EchoRequest) (*EchoResponse, error)
 	mustEmbedUnimplementedNodeServiceServer()
@@ -85,6 +100,9 @@ type UnimplementedNodeServiceServer struct{}
 
 func (UnimplementedNodeServiceServer) Ping(context.Context, *PingRequest) (*PingResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Ping not implemented")
+}
+func (UnimplementedNodeServiceServer) Fetch(context.Context, *FetchRequest) (*FetchResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Fetch not implemented")
 }
 func (UnimplementedNodeServiceServer) Echo(context.Context, *EchoRequest) (*EchoResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Echo not implemented")
@@ -128,6 +146,24 @@ func _NodeService_Ping_Handler(srv interface{}, ctx context.Context, dec func(in
 	return interceptor(ctx, in, info, handler)
 }
 
+func _NodeService_Fetch_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(FetchRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NodeServiceServer).Fetch(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NodeService_Fetch_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NodeServiceServer).Fetch(ctx, req.(*FetchRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _NodeService_Echo_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(EchoRequest)
 	if err := dec(in); err != nil {
@@ -156,6 +192,10 @@ var NodeService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Ping",
 			Handler:    _NodeService_Ping_Handler,
+		},
+		{
+			MethodName: "Fetch",
+			Handler:    _NodeService_Fetch_Handler,
 		},
 		{
 			MethodName: "Echo",

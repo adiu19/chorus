@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"hash/crc32"
 	"sort"
+	"strings"
 	"sync"
 )
 
@@ -21,9 +22,9 @@ type virtualNode struct {
 
 // Ring encapsulates info on the hash ring we're maintaining
 type Ring struct {
-	mu      sync.RWMutex
-	ring    []virtualNode // sorted by position
-	Version int16
+	mu          sync.RWMutex
+	ring        []virtualNode // sorted by position
+	Fingerprint uint32        // hash of sorted node IDs - same fingerprint = same membership
 }
 
 // New inits a new ring
@@ -37,6 +38,14 @@ func New() *Ring {
 func (r *Ring) Rebalance(nodes []string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+
+	// Sort nodes for deterministic fingerprint
+	sorted := make([]string, len(nodes))
+	copy(sorted, nodes)
+	sort.Strings(sorted)
+
+	// Compute fingerprint from sorted membership
+	r.Fingerprint = crc32.ChecksumIEEE([]byte(strings.Join(sorted, ",")))
 
 	r.ring = r.ring[:0] // clear
 
