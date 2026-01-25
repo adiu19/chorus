@@ -1,4 +1,4 @@
-.PHONY: build run-node1 run-node2 run-node3 clean
+.PHONY: build run-node1 run-node2 run-node3 run-node4 run-node5 clean
 
 # Build the binary
 build:
@@ -13,6 +13,12 @@ run-node2: build
 
 run-node3: build
 	NODE_ID=node3 PORT=8012 ./chorus-node
+
+run-node4: build
+	NODE_ID=node4 PORT=8013 ./chorus-node
+
+run-node5: build
+	NODE_ID=node5 PORT=8014 ./chorus-node
 
 # Clean up
 clean:
