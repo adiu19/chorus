@@ -13,6 +13,7 @@ import (
 	"github.com/chorus/node"
 	pb "github.com/chorus/proto"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/reflection"
 )
 
 func main() {
@@ -31,6 +32,7 @@ func main() {
 
 	grpcServer := grpc.NewServer()
 	pb.RegisterNodeServiceServer(grpcServer, n)
+	reflection.Register(grpcServer)
 
 	log.Printf("[%s] gRPC server listening on :%s", n.ID, n.Port)
 

@@ -26,6 +26,9 @@ type Node struct {
 
 	mu        sync.RWMutex
 	heartbeat int64 // this node's heartbeat counter, only we increment this
+
+	dataMu sync.RWMutex
+	data   map[string][]byte // key-value storage
 }
 
 func NewNode(id, port string, seeds []string) *Node {
@@ -38,6 +41,7 @@ func NewNode(id, port string, seeds []string) *Node {
 		peers:     cluster.NewPeerList(id, addr),
 		ring:      ring.New(),
 		heartbeat: 0,
+		data:      make(map[string][]byte),
 	}
 
 	// Add seeds (we don't know their IDs yet, use address as temp ID)
@@ -178,6 +182,67 @@ func (n *Node) Fetch(ctx context.Context, req *pb.FetchRequest) (*pb.FetchRespon
 		OwnerId:         ownerID,
 		OwnerAddr:       ownerAddr,
 		RingFingerprint: n.ring.Fingerprint,
+	}, nil
+}
+
+// Put RPC - stores a value if this node owns the key, otherwise returns redirect info
+func (n *Node) Put(ctx context.Context, req *pb.PutRequest) (*pb.PutResponse, error) {
+	ownerID, err := n.ring.GetNode(req.Key)
+	if err != nil {
+		return nil, err
+	}
+
+	// Check if we own this key
+	if ownerID != n.ID {
+		ownerAddr := n.peers.GetAddress(ownerID)
+		log.Printf("[%s] Put key=%s redirect to %s", n.ID, req.Key, ownerID)
+		return &pb.PutResponse{
+			Stored:    false,
+			OwnerId:   ownerID,
+			OwnerAddr: ownerAddr,
+		}, nil
+	}
+
+	// We own it - store the value
+	n.dataMu.Lock()
+	n.data[req.Key] = req.Value
+	n.dataMu.Unlock()
+
+	log.Printf("[%s] Put key=%s stored (%d bytes)", n.ID, req.Key, len(req.Value))
+
+	return &pb.PutResponse{
+		Stored: true,
+	}, nil
+}
+
+// Get RPC - retrieves a value if this node owns the key, otherwise returns redirect info
+func (n *Node) Get(ctx context.Context, req *pb.GetRequest) (*pb.GetResponse, error) {
+	ownerID, err := n.ring.GetNode(req.Key)
+	if err != nil {
+		return nil, err
+	}
+
+	// Check if we own this key
+	if ownerID != n.ID {
+		ownerAddr := n.peers.GetAddress(ownerID)
+		log.Printf("[%s] Get key=%s redirect to %s", n.ID, req.Key, ownerID)
+		return &pb.GetResponse{
+			Found:     false,
+			OwnerId:   ownerID,
+			OwnerAddr: ownerAddr,
+		}, nil
+	}
+
+	// We own it - look up the value
+	n.dataMu.RLock()
+	value, found := n.data[req.Key]
+	n.dataMu.RUnlock()
+
+	log.Printf("[%s] Get key=%s found=%v", n.ID, req.Key, found)
+
+	return &pb.GetResponse{
+		Found: found,
+		Value: value,
 	}, nil
 }
 

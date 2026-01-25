@@ -21,6 +21,8 @@ const _ = grpc.SupportPackageIsVersion9
 const (
 	NodeService_Ping_FullMethodName  = "/node.NodeService/Ping"
 	NodeService_Fetch_FullMethodName = "/node.NodeService/Fetch"
+	NodeService_Put_FullMethodName   = "/node.NodeService/Put"
+	NodeService_Get_FullMethodName   = "/node.NodeService/Get"
 	NodeService_Echo_FullMethodName  = "/node.NodeService/Echo"
 )
 
@@ -34,6 +36,10 @@ type NodeServiceClient interface {
 	Ping(ctx context.Context, in *PingRequest, opts ...grpc.CallOption) (*PingResponse, error)
 	// Fetch returns the owner of a key (for routing)
 	Fetch(ctx context.Context, in *FetchRequest, opts ...grpc.CallOption) (*FetchResponse, error)
+	// Put stores a value for a key (must be sent to owner node)
+	Put(ctx context.Context, in *PutRequest, opts ...grpc.CallOption) (*PutResponse, error)
+	// Get retrieves a value for a key (must be sent to owner node)
+	Get(ctx context.Context, in *GetRequest, opts ...grpc.CallOption) (*GetResponse, error)
 	// Echo sends a message and gets a response
 	Echo(ctx context.Context, in *EchoRequest, opts ...grpc.CallOption) (*EchoResponse, error)
 }
@@ -66,6 +72,26 @@ func (c *nodeServiceClient) Fetch(ctx context.Context, in *FetchRequest, opts ..
 	return out, nil
 }
 
+func (c *nodeServiceClient) Put(ctx context.Context, in *PutRequest, opts ...grpc.CallOption) (*PutResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PutResponse)
+	err := c.cc.Invoke(ctx, NodeService_Put_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *nodeServiceClient) Get(ctx context.Context, in *GetRequest, opts ...grpc.CallOption) (*GetResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetResponse)
+	err := c.cc.Invoke(ctx, NodeService_Get_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *nodeServiceClient) Echo(ctx context.Context, in *EchoRequest, opts ...grpc.CallOption) (*EchoResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(EchoResponse)
@@ -86,6 +112,10 @@ type NodeServiceServer interface {
 	Ping(context.Context, *PingRequest) (*PingResponse, error)
 	// Fetch returns the owner of a key (for routing)
 	Fetch(context.Context, *FetchRequest) (*FetchResponse, error)
+	// Put stores a value for a key (must be sent to owner node)
+	Put(context.Context, *PutRequest) (*PutResponse, error)
+	// Get retrieves a value for a key (must be sent to owner node)
+	Get(context.Context, *GetRequest) (*GetResponse, error)
 	// Echo sends a message and gets a response
 	Echo(context.Context, *EchoRequest) (*EchoResponse, error)
 	mustEmbedUnimplementedNodeServiceServer()
@@ -103,6 +133,12 @@ func (UnimplementedNodeServiceServer) Ping(context.Context, *PingRequest) (*Ping
 }
 func (UnimplementedNodeServiceServer) Fetch(context.Context, *FetchRequest) (*FetchResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Fetch not implemented")
+}
+func (UnimplementedNodeServiceServer) Put(context.Context, *PutRequest) (*PutResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Put not implemented")
+}
+func (UnimplementedNodeServiceServer) Get(context.Context, *GetRequest) (*GetResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Get not implemented")
 }
 func (UnimplementedNodeServiceServer) Echo(context.Context, *EchoRequest) (*EchoResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Echo not implemented")
@@ -164,6 +200,42 @@ func _NodeService_Fetch_Handler(srv interface{}, ctx context.Context, dec func(i
 	return interceptor(ctx, in, info, handler)
 }
 
+func _NodeService_Put_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PutRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NodeServiceServer).Put(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NodeService_Put_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NodeServiceServer).Put(ctx, req.(*PutRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _NodeService_Get_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NodeServiceServer).Get(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NodeService_Get_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NodeServiceServer).Get(ctx, req.(*GetRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _NodeService_Echo_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(EchoRequest)
 	if err := dec(in); err != nil {
@@ -196,6 +268,14 @@ var NodeService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Fetch",
 			Handler:    _NodeService_Fetch_Handler,
+		},
+		{
+			MethodName: "Put",
+			Handler:    _NodeService_Put_Handler,
+		},
+		{
+			MethodName: "Get",
+			Handler:    _NodeService_Get_Handler,
 		},
 		{
 			MethodName: "Echo",

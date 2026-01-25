@@ -12,6 +12,12 @@ service NodeService {
   // Fetch returns the owner of a key (for routing)
   rpc Fetch(FetchRequest) returns (FetchResponse);
 
+  // Put stores a value for a key (must be sent to owner node)
+  rpc Put(PutRequest) returns (PutResponse);
+
+  // Get retrieves a value for a key (must be sent to owner node)
+  rpc Get(GetRequest) returns (GetResponse);
+
   // Echo sends a message and gets a response
   rpc Echo(EchoRequest) returns (EchoResponse);
 }
@@ -54,4 +60,26 @@ message EchoResponse {
   string node_id = 1;
   string message = 2;
   int32 hop_count = 3;
+}
+
+message PutRequest {
+  string key = 1;
+  bytes value = 2;
+}
+
+message PutResponse {
+  bool stored = 1;          // true if this node stored the value
+  string owner_id = 2;      // if not stored: the actual owner
+  string owner_addr = 3;    // if not stored: owner's address for redirect
+}
+
+message GetRequest {
+  string key = 1;
+}
+
+message GetResponse {
+  bool found = 1;           // true if key exists on this node
+  bytes value = 2;          // the value (if found)
+  string owner_id = 3;      // if wrong node: the actual owner
+  string owner_addr = 4;    // if wrong node: owner's address for redirect
 }

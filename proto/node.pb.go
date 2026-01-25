@@ -418,6 +418,230 @@ func (x *EchoResponse) GetHopCount() int32 {
 	return 0
 }
 
+type PutRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	Value         []byte                 `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PutRequest) Reset() {
+	*x = PutRequest{}
+	mi := &file_proto_node_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PutRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PutRequest) ProtoMessage() {}
+
+func (x *PutRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_node_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PutRequest.ProtoReflect.Descriptor instead.
+func (*PutRequest) Descriptor() ([]byte, []int) {
+	return file_proto_node_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *PutRequest) GetKey() string {
+	if x != nil {
+		return x.Key
+	}
+	return ""
+}
+
+func (x *PutRequest) GetValue() []byte {
+	if x != nil {
+		return x.Value
+	}
+	return nil
+}
+
+type PutResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Stored        bool                   `protobuf:"varint,1,opt,name=stored,proto3" json:"stored,omitempty"`                       // true if this node stored the value
+	OwnerId       string                 `protobuf:"bytes,2,opt,name=owner_id,json=ownerId,proto3" json:"owner_id,omitempty"`       // if not stored: the actual owner
+	OwnerAddr     string                 `protobuf:"bytes,3,opt,name=owner_addr,json=ownerAddr,proto3" json:"owner_addr,omitempty"` // if not stored: owner's address for redirect
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PutResponse) Reset() {
+	*x = PutResponse{}
+	mi := &file_proto_node_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PutResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PutResponse) ProtoMessage() {}
+
+func (x *PutResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_node_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PutResponse.ProtoReflect.Descriptor instead.
+func (*PutResponse) Descriptor() ([]byte, []int) {
+	return file_proto_node_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *PutResponse) GetStored() bool {
+	if x != nil {
+		return x.Stored
+	}
+	return false
+}
+
+func (x *PutResponse) GetOwnerId() string {
+	if x != nil {
+		return x.OwnerId
+	}
+	return ""
+}
+
+func (x *PutResponse) GetOwnerAddr() string {
+	if x != nil {
+		return x.OwnerAddr
+	}
+	return ""
+}
+
+type GetRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetRequest) Reset() {
+	*x = GetRequest{}
+	mi := &file_proto_node_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetRequest) ProtoMessage() {}
+
+func (x *GetRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_node_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetRequest.ProtoReflect.Descriptor instead.
+func (*GetRequest) Descriptor() ([]byte, []int) {
+	return file_proto_node_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *GetRequest) GetKey() string {
+	if x != nil {
+		return x.Key
+	}
+	return ""
+}
+
+type GetResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Found         bool                   `protobuf:"varint,1,opt,name=found,proto3" json:"found,omitempty"`                         // true if key exists on this node
+	Value         []byte                 `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`                          // the value (if found)
+	OwnerId       string                 `protobuf:"bytes,3,opt,name=owner_id,json=ownerId,proto3" json:"owner_id,omitempty"`       // if wrong node: the actual owner
+	OwnerAddr     string                 `protobuf:"bytes,4,opt,name=owner_addr,json=ownerAddr,proto3" json:"owner_addr,omitempty"` // if wrong node: owner's address for redirect
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetResponse) Reset() {
+	*x = GetResponse{}
+	mi := &file_proto_node_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetResponse) ProtoMessage() {}
+
+func (x *GetResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_node_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetResponse.ProtoReflect.Descriptor instead.
+func (*GetResponse) Descriptor() ([]byte, []int) {
+	return file_proto_node_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *GetResponse) GetFound() bool {
+	if x != nil {
+		return x.Found
+	}
+	return false
+}
+
+func (x *GetResponse) GetValue() []byte {
+	if x != nil {
+		return x.Value
+	}
+	return nil
+}
+
+func (x *GetResponse) GetOwnerId() string {
+	if x != nil {
+		return x.OwnerId
+	}
+	return ""
+}
+
+func (x *GetResponse) GetOwnerAddr() string {
+	if x != nil {
+		return x.OwnerAddr
+	}
+	return ""
+}
+
 var File_proto_node_proto protoreflect.FileDescriptor
 
 const file_proto_node_proto_rawDesc = "" +
@@ -448,10 +672,30 @@ const file_proto_node_proto_rawDesc = "" +
 	"\fEchoResponse\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x12\x1b\n" +
-	"\thop_count\x18\x03 \x01(\x05R\bhopCount2\x9d\x01\n" +
+	"\thop_count\x18\x03 \x01(\x05R\bhopCount\"4\n" +
+	"\n" +
+	"PutRequest\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\fR\x05value\"_\n" +
+	"\vPutResponse\x12\x16\n" +
+	"\x06stored\x18\x01 \x01(\bR\x06stored\x12\x19\n" +
+	"\bowner_id\x18\x02 \x01(\tR\aownerId\x12\x1d\n" +
+	"\n" +
+	"owner_addr\x18\x03 \x01(\tR\townerAddr\"\x1e\n" +
+	"\n" +
+	"GetRequest\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\"s\n" +
+	"\vGetResponse\x12\x14\n" +
+	"\x05found\x18\x01 \x01(\bR\x05found\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\fR\x05value\x12\x19\n" +
+	"\bowner_id\x18\x03 \x01(\tR\aownerId\x12\x1d\n" +
+	"\n" +
+	"owner_addr\x18\x04 \x01(\tR\townerAddr2\xf5\x01\n" +
 	"\vNodeService\x12-\n" +
 	"\x04Ping\x12\x11.node.PingRequest\x1a\x12.node.PingResponse\x120\n" +
-	"\x05Fetch\x12\x12.node.FetchRequest\x1a\x13.node.FetchResponse\x12-\n" +
+	"\x05Fetch\x12\x12.node.FetchRequest\x1a\x13.node.FetchResponse\x12*\n" +
+	"\x03Put\x12\x10.node.PutRequest\x1a\x11.node.PutResponse\x12*\n" +
+	"\x03Get\x12\x10.node.GetRequest\x1a\x11.node.GetResponse\x12-\n" +
 	"\x04Echo\x12\x11.node.EchoRequest\x1a\x12.node.EchoResponseB\tZ\a./protob\x06proto3"
 
 var (
@@ -466,7 +710,7 @@ func file_proto_node_proto_rawDescGZIP() []byte {
 	return file_proto_node_proto_rawDescData
 }
 
-var file_proto_node_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
+var file_proto_node_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
 var file_proto_node_proto_goTypes = []any{
 	(*PeerInfo)(nil),      // 0: node.PeerInfo
 	(*PingRequest)(nil),   // 1: node.PingRequest
@@ -475,21 +719,29 @@ var file_proto_node_proto_goTypes = []any{
 	(*FetchResponse)(nil), // 4: node.FetchResponse
 	(*EchoRequest)(nil),   // 5: node.EchoRequest
 	(*EchoResponse)(nil),  // 6: node.EchoResponse
+	(*PutRequest)(nil),    // 7: node.PutRequest
+	(*PutResponse)(nil),   // 8: node.PutResponse
+	(*GetRequest)(nil),    // 9: node.GetRequest
+	(*GetResponse)(nil),   // 10: node.GetResponse
 }
 var file_proto_node_proto_depIdxs = []int32{
-	0, // 0: node.PingRequest.peers:type_name -> node.PeerInfo
-	0, // 1: node.PingResponse.peers:type_name -> node.PeerInfo
-	1, // 2: node.NodeService.Ping:input_type -> node.PingRequest
-	3, // 3: node.NodeService.Fetch:input_type -> node.FetchRequest
-	5, // 4: node.NodeService.Echo:input_type -> node.EchoRequest
-	2, // 5: node.NodeService.Ping:output_type -> node.PingResponse
-	4, // 6: node.NodeService.Fetch:output_type -> node.FetchResponse
-	6, // 7: node.NodeService.Echo:output_type -> node.EchoResponse
-	5, // [5:8] is the sub-list for method output_type
-	2, // [2:5] is the sub-list for method input_type
-	2, // [2:2] is the sub-list for extension type_name
-	2, // [2:2] is the sub-list for extension extendee
-	0, // [0:2] is the sub-list for field type_name
+	0,  // 0: node.PingRequest.peers:type_name -> node.PeerInfo
+	0,  // 1: node.PingResponse.peers:type_name -> node.PeerInfo
+	1,  // 2: node.NodeService.Ping:input_type -> node.PingRequest
+	3,  // 3: node.NodeService.Fetch:input_type -> node.FetchRequest
+	7,  // 4: node.NodeService.Put:input_type -> node.PutRequest
+	9,  // 5: node.NodeService.Get:input_type -> node.GetRequest
+	5,  // 6: node.NodeService.Echo:input_type -> node.EchoRequest
+	2,  // 7: node.NodeService.Ping:output_type -> node.PingResponse
+	4,  // 8: node.NodeService.Fetch:output_type -> node.FetchResponse
+	8,  // 9: node.NodeService.Put:output_type -> node.PutResponse
+	10, // 10: node.NodeService.Get:output_type -> node.GetResponse
+	6,  // 11: node.NodeService.Echo:output_type -> node.EchoResponse
+	7,  // [7:12] is the sub-list for method output_type
+	2,  // [2:7] is the sub-list for method input_type
+	2,  // [2:2] is the sub-list for extension type_name
+	2,  // [2:2] is the sub-list for extension extendee
+	0,  // [0:2] is the sub-list for field type_name
 }
 
 func init() { file_proto_node_proto_init() }
@@ -503,7 +755,7 @@ func file_proto_node_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_node_proto_rawDesc), len(file_proto_node_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   7,
+			NumMessages:   11,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
