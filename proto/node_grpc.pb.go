@@ -19,11 +19,12 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	NodeService_Ping_FullMethodName  = "/node.NodeService/Ping"
-	NodeService_Fetch_FullMethodName = "/node.NodeService/Fetch"
-	NodeService_Put_FullMethodName   = "/node.NodeService/Put"
-	NodeService_Get_FullMethodName   = "/node.NodeService/Get"
-	NodeService_Echo_FullMethodName  = "/node.NodeService/Echo"
+	NodeService_Ping_FullMethodName      = "/node.NodeService/Ping"
+	NodeService_Fetch_FullMethodName     = "/node.NodeService/Fetch"
+	NodeService_Put_FullMethodName       = "/node.NodeService/Put"
+	NodeService_Get_FullMethodName       = "/node.NodeService/Get"
+	NodeService_Replicate_FullMethodName = "/node.NodeService/Replicate"
+	NodeService_Echo_FullMethodName      = "/node.NodeService/Echo"
 )
 
 // NodeServiceClient is the client API for NodeService service.
@@ -40,6 +41,8 @@ type NodeServiceClient interface {
 	Put(ctx context.Context, in *PutRequest, opts ...grpc.CallOption) (*PutResponse, error)
 	// Get retrieves a value for a key (must be sent to owner node)
 	Get(ctx context.Context, in *GetRequest, opts ...grpc.CallOption) (*GetResponse, error)
+	// Replicate stores a value directly (used by primary to replicate to secondaries)
+	Replicate(ctx context.Context, in *ReplicateRequest, opts ...grpc.CallOption) (*ReplicateResponse, error)
 	// Echo sends a message and gets a response
 	Echo(ctx context.Context, in *EchoRequest, opts ...grpc.CallOption) (*EchoResponse, error)
 }
@@ -92,6 +95,16 @@ func (c *nodeServiceClient) Get(ctx context.Context, in *GetRequest, opts ...grp
 	return out, nil
 }
 
+func (c *nodeServiceClient) Replicate(ctx context.Context, in *ReplicateRequest, opts ...grpc.CallOption) (*ReplicateResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReplicateResponse)
+	err := c.cc.Invoke(ctx, NodeService_Replicate_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *nodeServiceClient) Echo(ctx context.Context, in *EchoRequest, opts ...grpc.CallOption) (*EchoResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(EchoResponse)
@@ -116,6 +129,8 @@ type NodeServiceServer interface {
 	Put(context.Context, *PutRequest) (*PutResponse, error)
 	// Get retrieves a value for a key (must be sent to owner node)
 	Get(context.Context, *GetRequest) (*GetResponse, error)
+	// Replicate stores a value directly (used by primary to replicate to secondaries)
+	Replicate(context.Context, *ReplicateRequest) (*ReplicateResponse, error)
 	// Echo sends a message and gets a response
 	Echo(context.Context, *EchoRequest) (*EchoResponse, error)
 	mustEmbedUnimplementedNodeServiceServer()
@@ -139,6 +154,9 @@ func (UnimplementedNodeServiceServer) Put(context.Context, *PutRequest) (*PutRes
 }
 func (UnimplementedNodeServiceServer) Get(context.Context, *GetRequest) (*GetResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Get not implemented")
+}
+func (UnimplementedNodeServiceServer) Replicate(context.Context, *ReplicateRequest) (*ReplicateResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Replicate not implemented")
 }
 func (UnimplementedNodeServiceServer) Echo(context.Context, *EchoRequest) (*EchoResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Echo not implemented")
@@ -236,6 +254,24 @@ func _NodeService_Get_Handler(srv interface{}, ctx context.Context, dec func(int
 	return interceptor(ctx, in, info, handler)
 }
 
+func _NodeService_Replicate_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReplicateRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NodeServiceServer).Replicate(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NodeService_Replicate_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NodeServiceServer).Replicate(ctx, req.(*ReplicateRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _NodeService_Echo_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(EchoRequest)
 	if err := dec(in); err != nil {
@@ -276,6 +312,10 @@ var NodeService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Get",
 			Handler:    _NodeService_Get_Handler,
+		},
+		{
+			MethodName: "Replicate",
+			Handler:    _NodeService_Replicate_Handler,
 		},
 		{
 			MethodName: "Echo",

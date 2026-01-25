@@ -15,6 +15,9 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
+// ReplicationFactor is the number of nodes that store each key
+const ReplicationFactor = 3
+
 type Node struct {
 	pb.UnimplementedNodeServiceServer
 	ID   string
@@ -189,34 +192,116 @@ func (n *Node) Fetch(ctx context.Context, req *pb.FetchRequest) (*pb.FetchRespon
 	}, nil
 }
 
-// Put RPC - stores a value if this node owns the key, otherwise returns redirect info
+// Put RPC - stores a value if this node is primary, replicates to other nodes
 func (n *Node) Put(ctx context.Context, req *pb.PutRequest) (*pb.PutResponse, error) {
-	ownerID, err := n.ring.GetNode(req.Key)
+	// Get all replica nodes for this key
+	replicas, err := n.ring.GetNodes(req.Key, ReplicationFactor)
 	if err != nil {
 		return nil, err
 	}
 
-	// Check if we own this key
-	if ownerID != n.ID {
-		ownerAddr := n.peers.GetAddress(ownerID)
-		log.Printf("[%s] Put key=%s redirect to %s", n.ID, req.Key, ownerID)
+	// Primary is the first node in the replica list
+	primaryID := replicas[0]
+
+	// Check if we're the primary
+	if primaryID != n.ID {
+		primaryAddr := n.peers.GetAddress(primaryID)
+		log.Printf("[%s] Put key=%s redirect to primary %s", n.ID, req.Key, primaryID)
 		return &pb.PutResponse{
 			Stored:    false,
-			OwnerId:   ownerID,
-			OwnerAddr: ownerAddr,
+			OwnerId:   primaryID,
+			OwnerAddr: primaryAddr,
 		}, nil
 	}
 
-	// We own it - store the value
+	// We're the primary - replicate to other nodes first
+	log.Printf("[%s] Put key=%s - I'm primary, replicas: %v", n.ID, req.Key, replicas)
+
+	replicaStatuses := make([]*pb.ReplicaStatus, 0, len(replicas))
+	allSuccess := true
+
+	// Replicate to secondary nodes in parallel
+	if len(replicas) > 1 {
+		type replicaResult struct {
+			nodeID  string
+			success bool
+			err     string
+		}
+
+		results := make(chan replicaResult, len(replicas)-1)
+
+		for _, replicaID := range replicas[1:] {
+			go func(nodeID string) {
+				success, errMsg := n.replicateToNode(ctx, nodeID, req.Key, req.Value)
+				results <- replicaResult{nodeID: nodeID, success: success, err: errMsg}
+			}(replicaID)
+		}
+
+		// Collect results
+		for i := 0; i < len(replicas)-1; i++ {
+			result := <-results
+			replicaStatuses = append(replicaStatuses, &pb.ReplicaStatus{
+				NodeId:  result.nodeID,
+				Success: result.success,
+				Error:   result.err,
+			})
+			if !result.success {
+				allSuccess = false
+			}
+		}
+	}
+
+	// Only store locally if all replicas succeeded (write-all-N semantics)
+	if !allSuccess {
+		log.Printf("[%s] Put key=%s failed - not all replicas acknowledged", n.ID, req.Key)
+		return &pb.PutResponse{
+			Stored:        false,
+			ReplicaStatus: replicaStatuses,
+		}, nil
+	}
+
+	// All replicas succeeded - store locally
 	n.dataMu.Lock()
 	n.data[req.Key] = req.Value
 	n.dataMu.Unlock()
 
-	log.Printf("[%s] Put key=%s stored (%d bytes)", n.ID, req.Key, len(req.Value))
+	// Add self to replica status
+	replicaStatuses = append([]*pb.ReplicaStatus{{
+		NodeId:  n.ID,
+		Success: true,
+	}}, replicaStatuses...)
+
+	log.Printf("[%s] Put key=%s stored on all %d replicas", n.ID, req.Key, len(replicas))
 
 	return &pb.PutResponse{
-		Stored: true,
+		Stored:        true,
+		ReplicaStatus: replicaStatuses,
 	}, nil
+}
+
+// replicateToNode sends a Replicate RPC to a specific node
+func (n *Node) replicateToNode(ctx context.Context, nodeID, key string, value []byte) (bool, string) {
+	addr := n.peers.GetAddress(nodeID)
+	if addr == "" {
+		return false, "unknown node address"
+	}
+
+	conn, err := n.getConn(addr)
+	if err != nil {
+		return false, fmt.Sprintf("connection failed: %v", err)
+	}
+
+	client := pb.NewNodeServiceClient(conn)
+
+	resp, err := client.Replicate(ctx, &pb.ReplicateRequest{
+		Key:   key,
+		Value: value,
+	})
+	if err != nil {
+		return false, fmt.Sprintf("replicate RPC failed: %v", err)
+	}
+
+	return resp.Stored, ""
 }
 
 // Get RPC - retrieves a value if this node owns the key, otherwise returns redirect info
@@ -247,6 +332,19 @@ func (n *Node) Get(ctx context.Context, req *pb.GetRequest) (*pb.GetResponse, er
 	return &pb.GetResponse{
 		Found: found,
 		Value: value,
+	}, nil
+}
+
+// Replicate RPC - stores a value directly without ownership check (used by primary)
+func (n *Node) Replicate(ctx context.Context, req *pb.ReplicateRequest) (*pb.ReplicateResponse, error) {
+	n.dataMu.Lock()
+	n.data[req.Key] = req.Value
+	n.dataMu.Unlock()
+
+	log.Printf("[%s] Replicate key=%s stored (%d bytes)", n.ID, req.Key, len(req.Value))
+
+	return &pb.ReplicateResponse{
+		Stored: true,
 	}, nil
 }
 

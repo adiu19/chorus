@@ -18,6 +18,9 @@ service NodeService {
   // Get retrieves a value for a key (must be sent to owner node)
   rpc Get(GetRequest) returns (GetResponse);
 
+  // Replicate stores a value directly (used by primary to replicate to secondaries)
+  rpc Replicate(ReplicateRequest) returns (ReplicateResponse);
+
   // Echo sends a message and gets a response
   rpc Echo(EchoRequest) returns (EchoResponse);
 }
@@ -68,9 +71,25 @@ message PutRequest {
 }
 
 message PutResponse {
-  bool stored = 1;          // true if this node stored the value
-  string owner_id = 2;      // if not stored: the actual owner
-  string owner_addr = 3;    // if not stored: owner's address for redirect
+  bool stored = 1;                          // true if this node stored the value
+  string owner_id = 2;                      // if not stored: the actual owner (primary)
+  string owner_addr = 3;                    // if not stored: owner's address for redirect
+  repeated ReplicaStatus replica_status = 4; // status per replica (for replication results)
+}
+
+message ReplicaStatus {
+  string node_id = 1;
+  bool success = 2;
+  string error = 3;
+}
+
+message ReplicateRequest {
+  string key = 1;
+  bytes value = 2;
+}
+
+message ReplicateResponse {
+  bool stored = 1;
 }
 
 message GetRequest {

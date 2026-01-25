@@ -85,6 +85,49 @@ func (r *Ring) GetNode(requestID string) (string, error) {
 	return r.ring[idx].node, nil
 }
 
+// GetNodes returns the first n distinct physical nodes clockwise from the key's position.
+// Used for replication - returns [primary, replica2, replica3, ...].
+func (r *Ring) GetNodes(key string, n int) ([]string, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	if len(r.ring) == 0 {
+		return nil, ErrEmptyRing
+	}
+
+	position := hash(key)
+
+	// binary search for first node with position >= hash
+	idx := sort.Search(len(r.ring), func(i int) bool {
+		return r.ring[i].position >= position
+	})
+
+	// wrap around to first node if past the end
+	if idx >= len(r.ring) {
+		idx = 0
+	}
+
+	// Walk clockwise collecting distinct physical nodes
+	nodes := make([]string, 0, n)
+	seen := make(map[string]bool)
+
+	for len(nodes) < n {
+		node := r.ring[idx].node
+		if !seen[node] {
+			seen[node] = true
+			nodes = append(nodes, node)
+		}
+		idx = (idx + 1) % len(r.ring)
+
+		// If we've wrapped around completely, we've seen all nodes
+		if len(seen) >= len(r.ring)/NumVirtualNodes {
+			break
+		}
+	}
+
+	return nodes, nil
+}
+
 func hash(key string) int {
 	return int(crc32.ChecksumIEEE([]byte(key)))
 }

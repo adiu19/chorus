@@ -472,9 +472,10 @@ func (x *PutRequest) GetValue() []byte {
 
 type PutResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Stored        bool                   `protobuf:"varint,1,opt,name=stored,proto3" json:"stored,omitempty"`                       // true if this node stored the value
-	OwnerId       string                 `protobuf:"bytes,2,opt,name=owner_id,json=ownerId,proto3" json:"owner_id,omitempty"`       // if not stored: the actual owner
-	OwnerAddr     string                 `protobuf:"bytes,3,opt,name=owner_addr,json=ownerAddr,proto3" json:"owner_addr,omitempty"` // if not stored: owner's address for redirect
+	Stored        bool                   `protobuf:"varint,1,opt,name=stored,proto3" json:"stored,omitempty"`                                   // true if this node stored the value
+	OwnerId       string                 `protobuf:"bytes,2,opt,name=owner_id,json=ownerId,proto3" json:"owner_id,omitempty"`                   // if not stored: the actual owner (primary)
+	OwnerAddr     string                 `protobuf:"bytes,3,opt,name=owner_addr,json=ownerAddr,proto3" json:"owner_addr,omitempty"`             // if not stored: owner's address for redirect
+	ReplicaStatus []*ReplicaStatus       `protobuf:"bytes,4,rep,name=replica_status,json=replicaStatus,proto3" json:"replica_status,omitempty"` // status per replica (for replication results)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -530,6 +531,169 @@ func (x *PutResponse) GetOwnerAddr() string {
 	return ""
 }
 
+func (x *PutResponse) GetReplicaStatus() []*ReplicaStatus {
+	if x != nil {
+		return x.ReplicaStatus
+	}
+	return nil
+}
+
+type ReplicaStatus struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	NodeId        string                 `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
+	Success       bool                   `protobuf:"varint,2,opt,name=success,proto3" json:"success,omitempty"`
+	Error         string                 `protobuf:"bytes,3,opt,name=error,proto3" json:"error,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReplicaStatus) Reset() {
+	*x = ReplicaStatus{}
+	mi := &file_proto_node_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReplicaStatus) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReplicaStatus) ProtoMessage() {}
+
+func (x *ReplicaStatus) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_node_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReplicaStatus.ProtoReflect.Descriptor instead.
+func (*ReplicaStatus) Descriptor() ([]byte, []int) {
+	return file_proto_node_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *ReplicaStatus) GetNodeId() string {
+	if x != nil {
+		return x.NodeId
+	}
+	return ""
+}
+
+func (x *ReplicaStatus) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
+func (x *ReplicaStatus) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
+type ReplicateRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	Value         []byte                 `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReplicateRequest) Reset() {
+	*x = ReplicateRequest{}
+	mi := &file_proto_node_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReplicateRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReplicateRequest) ProtoMessage() {}
+
+func (x *ReplicateRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_node_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReplicateRequest.ProtoReflect.Descriptor instead.
+func (*ReplicateRequest) Descriptor() ([]byte, []int) {
+	return file_proto_node_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *ReplicateRequest) GetKey() string {
+	if x != nil {
+		return x.Key
+	}
+	return ""
+}
+
+func (x *ReplicateRequest) GetValue() []byte {
+	if x != nil {
+		return x.Value
+	}
+	return nil
+}
+
+type ReplicateResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Stored        bool                   `protobuf:"varint,1,opt,name=stored,proto3" json:"stored,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReplicateResponse) Reset() {
+	*x = ReplicateResponse{}
+	mi := &file_proto_node_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReplicateResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReplicateResponse) ProtoMessage() {}
+
+func (x *ReplicateResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_node_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReplicateResponse.ProtoReflect.Descriptor instead.
+func (*ReplicateResponse) Descriptor() ([]byte, []int) {
+	return file_proto_node_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *ReplicateResponse) GetStored() bool {
+	if x != nil {
+		return x.Stored
+	}
+	return false
+}
+
 type GetRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
@@ -539,7 +703,7 @@ type GetRequest struct {
 
 func (x *GetRequest) Reset() {
 	*x = GetRequest{}
-	mi := &file_proto_node_proto_msgTypes[9]
+	mi := &file_proto_node_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -551,7 +715,7 @@ func (x *GetRequest) String() string {
 func (*GetRequest) ProtoMessage() {}
 
 func (x *GetRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_node_proto_msgTypes[9]
+	mi := &file_proto_node_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -564,7 +728,7 @@ func (x *GetRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetRequest.ProtoReflect.Descriptor instead.
 func (*GetRequest) Descriptor() ([]byte, []int) {
-	return file_proto_node_proto_rawDescGZIP(), []int{9}
+	return file_proto_node_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *GetRequest) GetKey() string {
@@ -586,7 +750,7 @@ type GetResponse struct {
 
 func (x *GetResponse) Reset() {
 	*x = GetResponse{}
-	mi := &file_proto_node_proto_msgTypes[10]
+	mi := &file_proto_node_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -598,7 +762,7 @@ func (x *GetResponse) String() string {
 func (*GetResponse) ProtoMessage() {}
 
 func (x *GetResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_node_proto_msgTypes[10]
+	mi := &file_proto_node_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -611,7 +775,7 @@ func (x *GetResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetResponse.ProtoReflect.Descriptor instead.
 func (*GetResponse) Descriptor() ([]byte, []int) {
-	return file_proto_node_proto_rawDescGZIP(), []int{10}
+	return file_proto_node_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *GetResponse) GetFound() bool {
@@ -676,12 +840,22 @@ const file_proto_node_proto_rawDesc = "" +
 	"\n" +
 	"PutRequest\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\fR\x05value\"_\n" +
+	"\x05value\x18\x02 \x01(\fR\x05value\"\x9b\x01\n" +
 	"\vPutResponse\x12\x16\n" +
 	"\x06stored\x18\x01 \x01(\bR\x06stored\x12\x19\n" +
 	"\bowner_id\x18\x02 \x01(\tR\aownerId\x12\x1d\n" +
 	"\n" +
-	"owner_addr\x18\x03 \x01(\tR\townerAddr\"\x1e\n" +
+	"owner_addr\x18\x03 \x01(\tR\townerAddr\x12:\n" +
+	"\x0ereplica_status\x18\x04 \x03(\v2\x13.node.ReplicaStatusR\rreplicaStatus\"X\n" +
+	"\rReplicaStatus\x12\x17\n" +
+	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x18\n" +
+	"\asuccess\x18\x02 \x01(\bR\asuccess\x12\x14\n" +
+	"\x05error\x18\x03 \x01(\tR\x05error\":\n" +
+	"\x10ReplicateRequest\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\fR\x05value\"+\n" +
+	"\x11ReplicateResponse\x12\x16\n" +
+	"\x06stored\x18\x01 \x01(\bR\x06stored\"\x1e\n" +
 	"\n" +
 	"GetRequest\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\"s\n" +
@@ -690,12 +864,13 @@ const file_proto_node_proto_rawDesc = "" +
 	"\x05value\x18\x02 \x01(\fR\x05value\x12\x19\n" +
 	"\bowner_id\x18\x03 \x01(\tR\aownerId\x12\x1d\n" +
 	"\n" +
-	"owner_addr\x18\x04 \x01(\tR\townerAddr2\xf5\x01\n" +
+	"owner_addr\x18\x04 \x01(\tR\townerAddr2\xb3\x02\n" +
 	"\vNodeService\x12-\n" +
 	"\x04Ping\x12\x11.node.PingRequest\x1a\x12.node.PingResponse\x120\n" +
 	"\x05Fetch\x12\x12.node.FetchRequest\x1a\x13.node.FetchResponse\x12*\n" +
 	"\x03Put\x12\x10.node.PutRequest\x1a\x11.node.PutResponse\x12*\n" +
-	"\x03Get\x12\x10.node.GetRequest\x1a\x11.node.GetResponse\x12-\n" +
+	"\x03Get\x12\x10.node.GetRequest\x1a\x11.node.GetResponse\x12<\n" +
+	"\tReplicate\x12\x16.node.ReplicateRequest\x1a\x17.node.ReplicateResponse\x12-\n" +
 	"\x04Echo\x12\x11.node.EchoRequest\x1a\x12.node.EchoResponseB\tZ\a./protob\x06proto3"
 
 var (
@@ -710,38 +885,44 @@ func file_proto_node_proto_rawDescGZIP() []byte {
 	return file_proto_node_proto_rawDescData
 }
 
-var file_proto_node_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
+var file_proto_node_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
 var file_proto_node_proto_goTypes = []any{
-	(*PeerInfo)(nil),      // 0: node.PeerInfo
-	(*PingRequest)(nil),   // 1: node.PingRequest
-	(*PingResponse)(nil),  // 2: node.PingResponse
-	(*FetchRequest)(nil),  // 3: node.FetchRequest
-	(*FetchResponse)(nil), // 4: node.FetchResponse
-	(*EchoRequest)(nil),   // 5: node.EchoRequest
-	(*EchoResponse)(nil),  // 6: node.EchoResponse
-	(*PutRequest)(nil),    // 7: node.PutRequest
-	(*PutResponse)(nil),   // 8: node.PutResponse
-	(*GetRequest)(nil),    // 9: node.GetRequest
-	(*GetResponse)(nil),   // 10: node.GetResponse
+	(*PeerInfo)(nil),          // 0: node.PeerInfo
+	(*PingRequest)(nil),       // 1: node.PingRequest
+	(*PingResponse)(nil),      // 2: node.PingResponse
+	(*FetchRequest)(nil),      // 3: node.FetchRequest
+	(*FetchResponse)(nil),     // 4: node.FetchResponse
+	(*EchoRequest)(nil),       // 5: node.EchoRequest
+	(*EchoResponse)(nil),      // 6: node.EchoResponse
+	(*PutRequest)(nil),        // 7: node.PutRequest
+	(*PutResponse)(nil),       // 8: node.PutResponse
+	(*ReplicaStatus)(nil),     // 9: node.ReplicaStatus
+	(*ReplicateRequest)(nil),  // 10: node.ReplicateRequest
+	(*ReplicateResponse)(nil), // 11: node.ReplicateResponse
+	(*GetRequest)(nil),        // 12: node.GetRequest
+	(*GetResponse)(nil),       // 13: node.GetResponse
 }
 var file_proto_node_proto_depIdxs = []int32{
 	0,  // 0: node.PingRequest.peers:type_name -> node.PeerInfo
 	0,  // 1: node.PingResponse.peers:type_name -> node.PeerInfo
-	1,  // 2: node.NodeService.Ping:input_type -> node.PingRequest
-	3,  // 3: node.NodeService.Fetch:input_type -> node.FetchRequest
-	7,  // 4: node.NodeService.Put:input_type -> node.PutRequest
-	9,  // 5: node.NodeService.Get:input_type -> node.GetRequest
-	5,  // 6: node.NodeService.Echo:input_type -> node.EchoRequest
-	2,  // 7: node.NodeService.Ping:output_type -> node.PingResponse
-	4,  // 8: node.NodeService.Fetch:output_type -> node.FetchResponse
-	8,  // 9: node.NodeService.Put:output_type -> node.PutResponse
-	10, // 10: node.NodeService.Get:output_type -> node.GetResponse
-	6,  // 11: node.NodeService.Echo:output_type -> node.EchoResponse
-	7,  // [7:12] is the sub-list for method output_type
-	2,  // [2:7] is the sub-list for method input_type
-	2,  // [2:2] is the sub-list for extension type_name
-	2,  // [2:2] is the sub-list for extension extendee
-	0,  // [0:2] is the sub-list for field type_name
+	9,  // 2: node.PutResponse.replica_status:type_name -> node.ReplicaStatus
+	1,  // 3: node.NodeService.Ping:input_type -> node.PingRequest
+	3,  // 4: node.NodeService.Fetch:input_type -> node.FetchRequest
+	7,  // 5: node.NodeService.Put:input_type -> node.PutRequest
+	12, // 6: node.NodeService.Get:input_type -> node.GetRequest
+	10, // 7: node.NodeService.Replicate:input_type -> node.ReplicateRequest
+	5,  // 8: node.NodeService.Echo:input_type -> node.EchoRequest
+	2,  // 9: node.NodeService.Ping:output_type -> node.PingResponse
+	4,  // 10: node.NodeService.Fetch:output_type -> node.FetchResponse
+	8,  // 11: node.NodeService.Put:output_type -> node.PutResponse
+	13, // 12: node.NodeService.Get:output_type -> node.GetResponse
+	11, // 13: node.NodeService.Replicate:output_type -> node.ReplicateResponse
+	6,  // 14: node.NodeService.Echo:output_type -> node.EchoResponse
+	9,  // [9:15] is the sub-list for method output_type
+	3,  // [3:9] is the sub-list for method input_type
+	3,  // [3:3] is the sub-list for extension type_name
+	3,  // [3:3] is the sub-list for extension extendee
+	0,  // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_proto_node_proto_init() }
@@ -755,7 +936,7 @@ func file_proto_node_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_node_proto_rawDesc), len(file_proto_node_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   11,
+			NumMessages:   14,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
