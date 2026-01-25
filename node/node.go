@@ -29,6 +29,9 @@ type Node struct {
 
 	dataMu sync.RWMutex
 	data   map[string][]byte // key-value storage
+
+	connMu sync.RWMutex
+	conns  map[string]*grpc.ClientConn // addr -> persistent connection
 }
 
 func NewNode(id, port string, seeds []string) *Node {
@@ -42,6 +45,7 @@ func NewNode(id, port string, seeds []string) *Node {
 		ring:      ring.New(),
 		heartbeat: 0,
 		data:      make(map[string][]byte),
+		conns:     make(map[string]*grpc.ClientConn),
 	}
 
 	// Add seeds (we don't know their IDs yet, use address as temp ID)
@@ -278,6 +282,45 @@ func (n *Node) StartGossip(ctx context.Context, interval time.Duration) {
 	}
 }
 
+// getConn returns a cached connection or creates a new one.
+func (n *Node) getConn(addr string) (*grpc.ClientConn, error) {
+	n.connMu.RLock()
+	conn, ok := n.conns[addr]
+	n.connMu.RUnlock()
+
+	if ok {
+		return conn, nil
+	}
+
+	// Create new connection
+	n.connMu.Lock()
+	defer n.connMu.Unlock()
+
+	// Double-check after acquiring write lock
+	if conn, ok := n.conns[addr]; ok {
+		return conn, nil
+	}
+
+	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return nil, err
+	}
+
+	n.conns[addr] = conn
+	return conn, nil
+}
+
+// closeConn removes and closes a connection (e.g., when peer is dead).
+func (n *Node) closeConn(addr string) {
+	n.connMu.Lock()
+	defer n.connMu.Unlock()
+
+	if conn, ok := n.conns[addr]; ok {
+		conn.Close()
+		delete(n.conns, addr)
+	}
+}
+
 // gossipOnce increments heartbeat, picks a random peer, and exchanges peer info.
 func (n *Node) gossipOnce() {
 	// Step 1: Increment our own heartbeat
@@ -293,8 +336,8 @@ func (n *Node) gossipOnce() {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	// Step 3: Connect to peer
-	conn, err := grpc.NewClient(peerAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	// Step 3: Get or create connection to peer
+	conn, err := n.getConn(peerAddr)
 	if err != nil {
 		log.Printf("[%s] Failed to connect to %s: %v", n.ID, peerAddr, err)
 		if n.peers.IncrementStaleCount(peerID) {
@@ -302,7 +345,6 @@ func (n *Node) gossipOnce() {
 		}
 		return
 	}
-	defer conn.Close()
 
 	client := pb.NewNodeServiceClient(conn)
 
@@ -313,6 +355,7 @@ func (n *Node) gossipOnce() {
 	})
 	if err != nil {
 		log.Printf("[%s] Ping to %s failed: %v", n.ID, peerAddr, err)
+		n.closeConn(peerAddr) // close bad connection
 		if n.peers.IncrementStaleCount(peerID) {
 			n.maybeRebalanceRing()
 		}
