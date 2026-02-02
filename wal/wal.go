@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"syscall"
 )
@@ -46,6 +47,25 @@ func Open(dir string) (*WAL, error) {
 		index:   -1,
 	}
 
+	// Initialize nextSeq from existing entries
+	entries, err := w.ReadAll()
+	if err != nil {
+		w.file.Close()
+		return nil, err
+	}
+	if len(entries) > 0 {
+		w.nextSeq = entries[len(entries)-1].Seq + 1
+	}
+
+	// Read index.log if exists
+	indexPath := filepath.Join(dir, "index.log")
+	data, err := os.ReadFile(indexPath)
+	if err == nil {
+		if parsed, err := strconv.ParseInt(string(data), 10, 64); err == nil {
+			w.index = parsed
+		}
+	}
+
 	// Register cleanup handler for graceful shutdown
 	go w.registerCleanupHandler()
 
@@ -64,4 +84,27 @@ func (w *WAL) Close() error {
 		return w.file.Close()
 	}
 	return nil
+}
+
+func (w *WAL) ReadAll() ([]Entry, error) {
+	// Seek to beginning of file
+	if _, err := w.file.Seek(0, 0); err != nil {
+		return nil, err
+	}
+
+	var entries []Entry
+	scanner := bufio.NewScanner(w.file)
+	for scanner.Scan() {
+		var entry Entry
+		if err := json.Unmarshal(scanner.Bytes(), &entry); err != nil {
+			return nil, err
+		}
+		entries = append(entries, entry)
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+
+	return entries, nil
 }
