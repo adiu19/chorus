@@ -3,3 +3,6 @@ chorus-node
 
 # Docs (personal notes)
 docs/ROADMAP.md
+
+# WAL data (local state)
+data/
