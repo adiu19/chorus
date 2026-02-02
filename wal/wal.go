@@ -108,3 +108,25 @@ func (w *WAL) ReadAll() ([]Entry, error) {
 
 	return entries, nil
 }
+
+func (w *WAL) SetIndex(seq int64) error {
+	w.index = seq
+	indexPath := filepath.Join(w.dir, "index.log")
+	return os.WriteFile(indexPath, []byte(strconv.FormatInt(seq, 10)), 0644)
+}
+
+func (w *WAL) Index() int64 {
+	return w.index
+}
+
+func (w *WAL) Append(tag, op, key string, value []byte) (int64, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	entry := Entry{Seq: w.nextSeq, Tag: tag, Op: op, Key: key, Value: value}
+	w.nextSeq++
+
+	data, _ := json.Marshal(entry)
+	_, err := w.file.Write(append(data, '\n'))
+	return entry.Seq, err
+}

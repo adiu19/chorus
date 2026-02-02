@@ -5,12 +5,14 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/chorus/cluster"
 	pb "github.com/chorus/proto"
 	"github.com/chorus/ring"
+	"github.com/chorus/wal"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
@@ -26,6 +28,7 @@ type Node struct {
 
 	peers *cluster.PeerList
 	ring  *ring.Ring
+	wal   *wal.WAL
 
 	mu        sync.RWMutex
 	heartbeat int64 // this node's heartbeat counter, only we increment this
@@ -50,6 +53,17 @@ func NewNode(id, port string, seeds []string) *Node {
 		data:      make(map[string][]byte),
 		conns:     make(map[string]*grpc.ClientConn),
 	}
+
+	// Initialize WAL
+	walDir := filepath.Join("data", "nodes", id)
+	w, err := wal.Open(walDir)
+	if err != nil {
+		log.Fatalf("Failed to open WAL: %v", err)
+	}
+	node.wal = w
+
+	// Replay WAL entries
+	node.replayWAL()
 
 	// Add seeds (we don't know their IDs yet, use address as temp ID)
 	// Skip our own address
@@ -82,6 +96,20 @@ func (n *Node) incrementHeartbeat() int64 {
 	defer n.mu.Unlock()
 	n.heartbeat++
 	return n.heartbeat
+}
+
+// replayWAL replays all WAL entries to restore state.
+func (n *Node) replayWAL() {
+	entries, _ := n.wal.ReadAll()
+	for _, e := range entries {
+		if e.Op == "put" {
+			n.data[e.Key] = e.Value
+		}
+	}
+	if len(entries) > 0 {
+		n.wal.SetIndex(entries[len(entries)-1].Seq)
+		log.Printf("[%s] Replayed %d WAL entries", n.ID, len(entries))
+	}
 }
 
 // getPeerInfosWithSelf returns all known peers plus self as PeerInfo slice.
@@ -260,10 +288,17 @@ func (n *Node) Put(ctx context.Context, req *pb.PutRequest) (*pb.PutResponse, er
 		}, nil
 	}
 
-	// All replicas succeeded - store locally
+	// All replicas succeeded - write to WAL and store locally
+	seq, err := n.wal.Append("primary", "put", req.Key, req.Value)
+	if err != nil {
+		return nil, err
+	}
+
 	n.dataMu.Lock()
 	n.data[req.Key] = req.Value
 	n.dataMu.Unlock()
+
+	n.wal.SetIndex(seq)
 
 	// Add self to replica status
 	replicaStatuses = append([]*pb.ReplicaStatus{{
@@ -337,11 +372,18 @@ func (n *Node) Get(ctx context.Context, req *pb.GetRequest) (*pb.GetResponse, er
 
 // Replicate RPC - stores a value directly without ownership check (used by primary)
 func (n *Node) Replicate(ctx context.Context, req *pb.ReplicateRequest) (*pb.ReplicateResponse, error) {
+	seq, err := n.wal.Append("replica", "put", req.Key, req.Value)
+	if err != nil {
+		return nil, err
+	}
+
 	n.dataMu.Lock()
 	n.data[req.Key] = req.Value
 	n.dataMu.Unlock()
 
-	log.Printf("[%s] Replicate key=%s stored (%d bytes)", n.ID, req.Key, len(req.Value))
+	n.wal.SetIndex(seq)
+
+	log.Printf("[%s] Replicate key=%s seq=%d", n.ID, req.Key, seq)
 
 	return &pb.ReplicateResponse{
 		Stored: true,
