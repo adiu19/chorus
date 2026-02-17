@@ -24,8 +24,6 @@ func TestScheduler_SkipJobsThatDontFit(t *testing.T) {
 	// 4 workers * 5 capacity = 20 total
 	sched := New(Config{CapacityPerWorker: 5, TickInterval: time.Second})
 
-	// These three cost 8 each = 24 total. Only two can fit (each on separate workers).
-	// The third (lowest priority) should be skipped.
 	sched.Submit(&Job{ID: "a", Priority: 1, Cost: 5})
 	sched.Submit(&Job{ID: "b", Priority: 2, Cost: 5})
 	sched.Submit(&Job{ID: "c", Priority: 3, Cost: 5})
@@ -93,5 +91,89 @@ func TestScheduler_ReclaimThenAdmit(t *testing.T) {
 	}
 	if pending != 0 {
 		t.Errorf("expected 0 pending, got %d", pending)
+	}
+}
+
+func TestScheduler_EndToEnd(t *testing.T) {
+	// 4 workers, 10 capacity each. Tick every 100ms.
+	sched := New(Config{CapacityPerWorker: 10, TickInterval: 100 * time.Millisecond})
+
+	// Submit 5 jobs with varying costs and durations.
+	// Total cost = 6+4+8+3+5 = 26, fits in 40 total capacity.
+	// All should be admitted on tick 1.
+	sched.Submit(&Job{ID: "j1", Priority: 1, Cost: 6, Duration: 150 * time.Millisecond})
+	sched.Submit(&Job{ID: "j2", Priority: 2, Cost: 4, Duration: 80 * time.Millisecond})
+	sched.Submit(&Job{ID: "j3", Priority: 3, Cost: 8, Duration: 200 * time.Millisecond})
+	sched.Submit(&Job{ID: "j4", Priority: 4, Cost: 3, Duration: 50 * time.Millisecond})
+	sched.Submit(&Job{ID: "j5", Priority: 5, Cost: 5, Duration: 120 * time.Millisecond})
+
+	// Tick 1: all 5 admitted, goroutines start sleeping
+	sched.Tick()
+	p, r, _ := sched.Stats()
+	if r != 5 || p != 0 {
+		t.Fatalf("tick 1: expected 5 running 0 pending, got %d running %d pending", r, p)
+	}
+
+	// Wait long enough for the short jobs to complete (j4=50ms, j2=80ms + up to 50ms jitter)
+	time.Sleep(200 * time.Millisecond)
+
+	// Tick 2: drain completions, reclaim short jobs
+	sched.Tick()
+	p, r, a := sched.Stats()
+	if r >= 5 {
+		t.Errorf("tick 2: expected some jobs to have completed, still have %d running", r)
+	}
+	if a <= 0 {
+		t.Errorf("tick 2: expected freed capacity, got %d", a)
+	}
+
+	// Wait for everything to finish (longest is j3=200ms + 50ms jitter)
+	time.Sleep(300 * time.Millisecond)
+
+	// Tick 3: all done
+	sched.Tick()
+	p, r, a = sched.Stats()
+	if r != 0 {
+		t.Errorf("tick 3: expected 0 running, got %d", r)
+	}
+	if p != 0 {
+		t.Errorf("tick 3: expected 0 pending, got %d", p)
+	}
+	if a != 40 {
+		t.Errorf("tick 3: expected full capacity (40), got %d", a)
+	}
+}
+
+func TestScheduler_CompletionFreesCapacityForPending(t *testing.T) {
+	// 4 workers, 5 capacity each = 20 total
+	sched := New(Config{CapacityPerWorker: 5, TickInterval: 100 * time.Millisecond})
+
+	// Fill all capacity: 4 jobs * cost 5 = 20
+	sched.Submit(&Job{ID: "a", Priority: 1, Cost: 5, Duration: 100 * time.Millisecond})
+	sched.Submit(&Job{ID: "b", Priority: 1, Cost: 5, Duration: 100 * time.Millisecond})
+	sched.Submit(&Job{ID: "c", Priority: 1, Cost: 5, Duration: 100 * time.Millisecond})
+	sched.Submit(&Job{ID: "d", Priority: 1, Cost: 5, Duration: 100 * time.Millisecond})
+
+	// This one can't fit yet
+	sched.Submit(&Job{ID: "waiting", Priority: 2, Cost: 5, Duration: 50 * time.Millisecond})
+
+	// Tick 1: 4 admitted, "waiting" stays pending
+	sched.Tick()
+	p, r, _ := sched.Stats()
+	if r != 4 || p != 1 {
+		t.Fatalf("tick 1: expected 4 running 1 pending, got %d running %d pending", r, p)
+	}
+
+	// Wait for the first batch to complete
+	time.Sleep(200 * time.Millisecond)
+
+	// Tick 2: drain + reclaim frees capacity, admit picks up "waiting"
+	sched.Tick()
+	p, r, _ = sched.Stats()
+	if r != 1 {
+		t.Errorf("tick 2: expected 1 running (waiting), got %d", r)
+	}
+	if p != 0 {
+		t.Errorf("tick 2: expected 0 pending, got %d", p)
 	}
 }

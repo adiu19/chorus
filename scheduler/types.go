@@ -30,8 +30,9 @@ func (s JobStatus) String() string {
 // Job represents a unit of work submitted to the scheduler.
 type Job struct {
 	ID        string
-	Priority  int       // Lower value = higher priority
-	Cost      int       // Capacity units this job consumes on a worker
+	Priority  int           // Lower value = higher priority
+	Cost      int           // Capacity units this job consumes on a worker
+	Duration  time.Duration // Simulated execution time
 	Status    JobStatus
 	WorkerID  string    // ID of the assigned worker (empty if not running)
 	CreatedAt time.Time
