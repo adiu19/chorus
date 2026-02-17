@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"container/heap"
+	"log"
 	"sync"
 	"time"
 )
@@ -21,6 +22,7 @@ type Scheduler struct {
 	pending *PriorityQueue
 	running map[string]*Job // job ID -> job
 	pool    *WorkerPool
+	stop    chan struct{} // signals the tick loop to shut down
 }
 
 // New creates a Scheduler with the given config.
@@ -35,6 +37,32 @@ func New(cfg Config) *Scheduler {
 		running: make(map[string]*Job),
 		pool:    NewWorkerPool(cfg.CapacityPerWorker),
 	}
+}
+
+// Start launches the tick loop in a background goroutine.
+// Each tick fires on the interval defined in Config.TickInterval.
+func (s *Scheduler) Start() {
+	s.stop = make(chan struct{})
+	ticker := time.NewTicker(s.config.TickInterval)
+	go func() {
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				s.Tick()
+				p, r, a := s.Stats()
+				log.Printf("[scheduler] tick=%d pending=%d running=%d available_capacity=%d",
+					s.CurrentTick(), p, r, a)
+			case <-s.stop:
+				return
+			}
+		}
+	}()
+}
+
+// Stop shuts down the tick loop.
+func (s *Scheduler) Stop() {
+	close(s.stop)
 }
 
 // Submit adds a job to the pending queue. Thread-safe.
@@ -53,7 +81,7 @@ func (s *Scheduler) Tick() {
 	defer s.mu.Unlock()
 	s.tick++
 	s.reclaim()
-	// 2.3: s.admit()
+	s.admit()
 }
 
 // CurrentTick returns the current tick count.
@@ -71,6 +99,30 @@ func (s *Scheduler) reclaim() {
 			s.pool.Release(job.WorkerID, job.ID, job.Cost)
 			delete(s.running, id)
 		}
+	}
+}
+
+// admit drains the pending queue in priority order, assigning jobs to workers
+// where capacity allows. Jobs that don't fit are re-queued for the next tick.
+// Must be called with s.mu held.
+func (s *Scheduler) admit() {
+	// Drain the PQ into a slice so we can try each job and re-queue skipped ones.
+	var skipped []*Job
+	for s.pending.Len() > 0 {
+		job := PopJob(s.pending)
+		workerID, ok := s.pool.Admit(job.ID, job.Cost)
+		if ok {
+			job.Status = Running
+			job.WorkerID = workerID
+			job.StartedAt = time.Now()
+			s.running[job.ID] = job
+		} else {
+			skipped = append(skipped, job)
+		}
+	}
+	// Re-queue jobs that didn't fit
+	for _, job := range skipped {
+		PushJob(s.pending, job)
 	}
 }
 
