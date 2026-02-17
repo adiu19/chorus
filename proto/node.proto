@@ -23,6 +23,15 @@ service NodeService {
 
   // Echo sends a message and gets a response
   rpc Echo(EchoRequest) returns (EchoResponse);
+
+  // SubmitJob enqueues a job for scheduling
+  rpc SubmitJob(SubmitJobRequest) returns (SubmitJobResponse);
+
+  // GetJobStatus returns the current status of a job
+  rpc GetJobStatus(JobStatusRequest) returns (JobStatusResponse);
+
+  // ListJobs returns a summary of all jobs known to the scheduler
+  rpc ListJobs(ListJobsRequest) returns (ListJobsResponse);
 }
 
 // PeerInfo contains information about a peer node
@@ -101,4 +110,45 @@ message GetResponse {
   bytes value = 2;          // the value (if found)
   string owner_id = 3;      // if wrong node: the actual owner
   string owner_addr = 4;    // if wrong node: owner's address for redirect
+}
+
+// --- Scheduler messages ---
+
+message SubmitJobRequest {
+  string id = 1;            // client-provided job ID
+  int32 priority = 2;       // lower value = higher priority
+  int32 cost = 3;           // capacity units consumed
+  int64 duration_ms = 4;    // simulated execution time in milliseconds
+}
+
+message SubmitJobResponse {
+  string id = 1;            // job ID
+  string status = 2;        // "pending" or "rejected"
+  string reason = 3;        // rejection reason (empty if accepted)
+}
+
+message JobStatusRequest {
+  string id = 1;            // job ID to look up
+}
+
+message JobStatusResponse {
+  string id = 1;
+  string status = 2;        // "pending", "running", "completed", "rejected", "unknown"
+  string worker_id = 3;     // assigned worker (empty if not running)
+  int32 priority = 4;
+  int32 cost = 5;
+}
+
+message ListJobsRequest {}
+
+message ListJobsResponse {
+  repeated JobSummary jobs = 1;
+}
+
+message JobSummary {
+  string id = 1;
+  string status = 2;
+  int32 priority = 3;
+  int32 cost = 4;
+  string worker_id = 5;
 }

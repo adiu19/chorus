@@ -19,12 +19,15 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	NodeService_Ping_FullMethodName      = "/node.NodeService/Ping"
-	NodeService_Fetch_FullMethodName     = "/node.NodeService/Fetch"
-	NodeService_Put_FullMethodName       = "/node.NodeService/Put"
-	NodeService_Get_FullMethodName       = "/node.NodeService/Get"
-	NodeService_Replicate_FullMethodName = "/node.NodeService/Replicate"
-	NodeService_Echo_FullMethodName      = "/node.NodeService/Echo"
+	NodeService_Ping_FullMethodName         = "/node.NodeService/Ping"
+	NodeService_Fetch_FullMethodName        = "/node.NodeService/Fetch"
+	NodeService_Put_FullMethodName          = "/node.NodeService/Put"
+	NodeService_Get_FullMethodName          = "/node.NodeService/Get"
+	NodeService_Replicate_FullMethodName    = "/node.NodeService/Replicate"
+	NodeService_Echo_FullMethodName         = "/node.NodeService/Echo"
+	NodeService_SubmitJob_FullMethodName    = "/node.NodeService/SubmitJob"
+	NodeService_GetJobStatus_FullMethodName = "/node.NodeService/GetJobStatus"
+	NodeService_ListJobs_FullMethodName     = "/node.NodeService/ListJobs"
 )
 
 // NodeServiceClient is the client API for NodeService service.
@@ -45,6 +48,12 @@ type NodeServiceClient interface {
 	Replicate(ctx context.Context, in *ReplicateRequest, opts ...grpc.CallOption) (*ReplicateResponse, error)
 	// Echo sends a message and gets a response
 	Echo(ctx context.Context, in *EchoRequest, opts ...grpc.CallOption) (*EchoResponse, error)
+	// SubmitJob enqueues a job for scheduling
+	SubmitJob(ctx context.Context, in *SubmitJobRequest, opts ...grpc.CallOption) (*SubmitJobResponse, error)
+	// GetJobStatus returns the current status of a job
+	GetJobStatus(ctx context.Context, in *JobStatusRequest, opts ...grpc.CallOption) (*JobStatusResponse, error)
+	// ListJobs returns a summary of all jobs known to the scheduler
+	ListJobs(ctx context.Context, in *ListJobsRequest, opts ...grpc.CallOption) (*ListJobsResponse, error)
 }
 
 type nodeServiceClient struct {
@@ -115,6 +124,36 @@ func (c *nodeServiceClient) Echo(ctx context.Context, in *EchoRequest, opts ...g
 	return out, nil
 }
 
+func (c *nodeServiceClient) SubmitJob(ctx context.Context, in *SubmitJobRequest, opts ...grpc.CallOption) (*SubmitJobResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SubmitJobResponse)
+	err := c.cc.Invoke(ctx, NodeService_SubmitJob_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *nodeServiceClient) GetJobStatus(ctx context.Context, in *JobStatusRequest, opts ...grpc.CallOption) (*JobStatusResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(JobStatusResponse)
+	err := c.cc.Invoke(ctx, NodeService_GetJobStatus_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *nodeServiceClient) ListJobs(ctx context.Context, in *ListJobsRequest, opts ...grpc.CallOption) (*ListJobsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListJobsResponse)
+	err := c.cc.Invoke(ctx, NodeService_ListJobs_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // NodeServiceServer is the server API for NodeService service.
 // All implementations must embed UnimplementedNodeServiceServer
 // for forward compatibility.
@@ -133,6 +172,12 @@ type NodeServiceServer interface {
 	Replicate(context.Context, *ReplicateRequest) (*ReplicateResponse, error)
 	// Echo sends a message and gets a response
 	Echo(context.Context, *EchoRequest) (*EchoResponse, error)
+	// SubmitJob enqueues a job for scheduling
+	SubmitJob(context.Context, *SubmitJobRequest) (*SubmitJobResponse, error)
+	// GetJobStatus returns the current status of a job
+	GetJobStatus(context.Context, *JobStatusRequest) (*JobStatusResponse, error)
+	// ListJobs returns a summary of all jobs known to the scheduler
+	ListJobs(context.Context, *ListJobsRequest) (*ListJobsResponse, error)
 	mustEmbedUnimplementedNodeServiceServer()
 }
 
@@ -160,6 +205,15 @@ func (UnimplementedNodeServiceServer) Replicate(context.Context, *ReplicateReque
 }
 func (UnimplementedNodeServiceServer) Echo(context.Context, *EchoRequest) (*EchoResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Echo not implemented")
+}
+func (UnimplementedNodeServiceServer) SubmitJob(context.Context, *SubmitJobRequest) (*SubmitJobResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SubmitJob not implemented")
+}
+func (UnimplementedNodeServiceServer) GetJobStatus(context.Context, *JobStatusRequest) (*JobStatusResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetJobStatus not implemented")
+}
+func (UnimplementedNodeServiceServer) ListJobs(context.Context, *ListJobsRequest) (*ListJobsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListJobs not implemented")
 }
 func (UnimplementedNodeServiceServer) mustEmbedUnimplementedNodeServiceServer() {}
 func (UnimplementedNodeServiceServer) testEmbeddedByValue()                     {}
@@ -290,6 +344,60 @@ func _NodeService_Echo_Handler(srv interface{}, ctx context.Context, dec func(in
 	return interceptor(ctx, in, info, handler)
 }
 
+func _NodeService_SubmitJob_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SubmitJobRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NodeServiceServer).SubmitJob(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NodeService_SubmitJob_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NodeServiceServer).SubmitJob(ctx, req.(*SubmitJobRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _NodeService_GetJobStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(JobStatusRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NodeServiceServer).GetJobStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NodeService_GetJobStatus_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NodeServiceServer).GetJobStatus(ctx, req.(*JobStatusRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _NodeService_ListJobs_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListJobsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NodeServiceServer).ListJobs(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NodeService_ListJobs_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NodeServiceServer).ListJobs(ctx, req.(*ListJobsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // NodeService_ServiceDesc is the grpc.ServiceDesc for NodeService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -320,6 +428,18 @@ var NodeService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Echo",
 			Handler:    _NodeService_Echo_Handler,
+		},
+		{
+			MethodName: "SubmitJob",
+			Handler:    _NodeService_SubmitJob_Handler,
+		},
+		{
+			MethodName: "GetJobStatus",
+			Handler:    _NodeService_GetJobStatus_Handler,
+		},
+		{
+			MethodName: "ListJobs",
+			Handler:    _NodeService_ListJobs_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

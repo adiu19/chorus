@@ -806,6 +806,410 @@ func (x *GetResponse) GetOwnerAddr() string {
 	return ""
 }
 
+type SubmitJobRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`                                    // client-provided job ID
+	Priority      int32                  `protobuf:"varint,2,opt,name=priority,proto3" json:"priority,omitempty"`                       // lower value = higher priority
+	Cost          int32                  `protobuf:"varint,3,opt,name=cost,proto3" json:"cost,omitempty"`                               // capacity units consumed
+	DurationMs    int64                  `protobuf:"varint,4,opt,name=duration_ms,json=durationMs,proto3" json:"duration_ms,omitempty"` // simulated execution time in milliseconds
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SubmitJobRequest) Reset() {
+	*x = SubmitJobRequest{}
+	mi := &file_proto_node_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SubmitJobRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SubmitJobRequest) ProtoMessage() {}
+
+func (x *SubmitJobRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_node_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SubmitJobRequest.ProtoReflect.Descriptor instead.
+func (*SubmitJobRequest) Descriptor() ([]byte, []int) {
+	return file_proto_node_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *SubmitJobRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *SubmitJobRequest) GetPriority() int32 {
+	if x != nil {
+		return x.Priority
+	}
+	return 0
+}
+
+func (x *SubmitJobRequest) GetCost() int32 {
+	if x != nil {
+		return x.Cost
+	}
+	return 0
+}
+
+func (x *SubmitJobRequest) GetDurationMs() int64 {
+	if x != nil {
+		return x.DurationMs
+	}
+	return 0
+}
+
+type SubmitJobResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`         // job ID
+	Status        string                 `protobuf:"bytes,2,opt,name=status,proto3" json:"status,omitempty"` // "pending" or "rejected"
+	Reason        string                 `protobuf:"bytes,3,opt,name=reason,proto3" json:"reason,omitempty"` // rejection reason (empty if accepted)
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SubmitJobResponse) Reset() {
+	*x = SubmitJobResponse{}
+	mi := &file_proto_node_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SubmitJobResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SubmitJobResponse) ProtoMessage() {}
+
+func (x *SubmitJobResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_node_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SubmitJobResponse.ProtoReflect.Descriptor instead.
+func (*SubmitJobResponse) Descriptor() ([]byte, []int) {
+	return file_proto_node_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *SubmitJobResponse) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *SubmitJobResponse) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *SubmitJobResponse) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+type JobStatusRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"` // job ID to look up
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *JobStatusRequest) Reset() {
+	*x = JobStatusRequest{}
+	mi := &file_proto_node_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *JobStatusRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*JobStatusRequest) ProtoMessage() {}
+
+func (x *JobStatusRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_node_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use JobStatusRequest.ProtoReflect.Descriptor instead.
+func (*JobStatusRequest) Descriptor() ([]byte, []int) {
+	return file_proto_node_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *JobStatusRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+type JobStatusResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Status        string                 `protobuf:"bytes,2,opt,name=status,proto3" json:"status,omitempty"`                     // "pending", "running", "completed", "rejected", "unknown"
+	WorkerId      string                 `protobuf:"bytes,3,opt,name=worker_id,json=workerId,proto3" json:"worker_id,omitempty"` // assigned worker (empty if not running)
+	Priority      int32                  `protobuf:"varint,4,opt,name=priority,proto3" json:"priority,omitempty"`
+	Cost          int32                  `protobuf:"varint,5,opt,name=cost,proto3" json:"cost,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *JobStatusResponse) Reset() {
+	*x = JobStatusResponse{}
+	mi := &file_proto_node_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *JobStatusResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*JobStatusResponse) ProtoMessage() {}
+
+func (x *JobStatusResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_node_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use JobStatusResponse.ProtoReflect.Descriptor instead.
+func (*JobStatusResponse) Descriptor() ([]byte, []int) {
+	return file_proto_node_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *JobStatusResponse) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *JobStatusResponse) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *JobStatusResponse) GetWorkerId() string {
+	if x != nil {
+		return x.WorkerId
+	}
+	return ""
+}
+
+func (x *JobStatusResponse) GetPriority() int32 {
+	if x != nil {
+		return x.Priority
+	}
+	return 0
+}
+
+func (x *JobStatusResponse) GetCost() int32 {
+	if x != nil {
+		return x.Cost
+	}
+	return 0
+}
+
+type ListJobsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListJobsRequest) Reset() {
+	*x = ListJobsRequest{}
+	mi := &file_proto_node_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListJobsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListJobsRequest) ProtoMessage() {}
+
+func (x *ListJobsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_node_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListJobsRequest.ProtoReflect.Descriptor instead.
+func (*ListJobsRequest) Descriptor() ([]byte, []int) {
+	return file_proto_node_proto_rawDescGZIP(), []int{18}
+}
+
+type ListJobsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Jobs          []*JobSummary          `protobuf:"bytes,1,rep,name=jobs,proto3" json:"jobs,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListJobsResponse) Reset() {
+	*x = ListJobsResponse{}
+	mi := &file_proto_node_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListJobsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListJobsResponse) ProtoMessage() {}
+
+func (x *ListJobsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_node_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListJobsResponse.ProtoReflect.Descriptor instead.
+func (*ListJobsResponse) Descriptor() ([]byte, []int) {
+	return file_proto_node_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *ListJobsResponse) GetJobs() []*JobSummary {
+	if x != nil {
+		return x.Jobs
+	}
+	return nil
+}
+
+type JobSummary struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Status        string                 `protobuf:"bytes,2,opt,name=status,proto3" json:"status,omitempty"`
+	Priority      int32                  `protobuf:"varint,3,opt,name=priority,proto3" json:"priority,omitempty"`
+	Cost          int32                  `protobuf:"varint,4,opt,name=cost,proto3" json:"cost,omitempty"`
+	WorkerId      string                 `protobuf:"bytes,5,opt,name=worker_id,json=workerId,proto3" json:"worker_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *JobSummary) Reset() {
+	*x = JobSummary{}
+	mi := &file_proto_node_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *JobSummary) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*JobSummary) ProtoMessage() {}
+
+func (x *JobSummary) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_node_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use JobSummary.ProtoReflect.Descriptor instead.
+func (*JobSummary) Descriptor() ([]byte, []int) {
+	return file_proto_node_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *JobSummary) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *JobSummary) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *JobSummary) GetPriority() int32 {
+	if x != nil {
+		return x.Priority
+	}
+	return 0
+}
+
+func (x *JobSummary) GetCost() int32 {
+	if x != nil {
+		return x.Cost
+	}
+	return 0
+}
+
+func (x *JobSummary) GetWorkerId() string {
+	if x != nil {
+		return x.WorkerId
+	}
+	return ""
+}
+
 var File_proto_node_proto protoreflect.FileDescriptor
 
 const file_proto_node_proto_rawDesc = "" +
@@ -864,14 +1268,45 @@ const file_proto_node_proto_rawDesc = "" +
 	"\x05value\x18\x02 \x01(\fR\x05value\x12\x19\n" +
 	"\bowner_id\x18\x03 \x01(\tR\aownerId\x12\x1d\n" +
 	"\n" +
-	"owner_addr\x18\x04 \x01(\tR\townerAddr2\xb3\x02\n" +
+	"owner_addr\x18\x04 \x01(\tR\townerAddr\"s\n" +
+	"\x10SubmitJobRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1a\n" +
+	"\bpriority\x18\x02 \x01(\x05R\bpriority\x12\x12\n" +
+	"\x04cost\x18\x03 \x01(\x05R\x04cost\x12\x1f\n" +
+	"\vduration_ms\x18\x04 \x01(\x03R\n" +
+	"durationMs\"S\n" +
+	"\x11SubmitJobResponse\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x16\n" +
+	"\x06status\x18\x02 \x01(\tR\x06status\x12\x16\n" +
+	"\x06reason\x18\x03 \x01(\tR\x06reason\"\"\n" +
+	"\x10JobStatusRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"\x88\x01\n" +
+	"\x11JobStatusResponse\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x16\n" +
+	"\x06status\x18\x02 \x01(\tR\x06status\x12\x1b\n" +
+	"\tworker_id\x18\x03 \x01(\tR\bworkerId\x12\x1a\n" +
+	"\bpriority\x18\x04 \x01(\x05R\bpriority\x12\x12\n" +
+	"\x04cost\x18\x05 \x01(\x05R\x04cost\"\x11\n" +
+	"\x0fListJobsRequest\"8\n" +
+	"\x10ListJobsResponse\x12$\n" +
+	"\x04jobs\x18\x01 \x03(\v2\x10.node.JobSummaryR\x04jobs\"\x81\x01\n" +
+	"\n" +
+	"JobSummary\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x16\n" +
+	"\x06status\x18\x02 \x01(\tR\x06status\x12\x1a\n" +
+	"\bpriority\x18\x03 \x01(\x05R\bpriority\x12\x12\n" +
+	"\x04cost\x18\x04 \x01(\x05R\x04cost\x12\x1b\n" +
+	"\tworker_id\x18\x05 \x01(\tR\bworkerId2\xed\x03\n" +
 	"\vNodeService\x12-\n" +
 	"\x04Ping\x12\x11.node.PingRequest\x1a\x12.node.PingResponse\x120\n" +
 	"\x05Fetch\x12\x12.node.FetchRequest\x1a\x13.node.FetchResponse\x12*\n" +
 	"\x03Put\x12\x10.node.PutRequest\x1a\x11.node.PutResponse\x12*\n" +
 	"\x03Get\x12\x10.node.GetRequest\x1a\x11.node.GetResponse\x12<\n" +
 	"\tReplicate\x12\x16.node.ReplicateRequest\x1a\x17.node.ReplicateResponse\x12-\n" +
-	"\x04Echo\x12\x11.node.EchoRequest\x1a\x12.node.EchoResponseB\tZ\a./protob\x06proto3"
+	"\x04Echo\x12\x11.node.EchoRequest\x1a\x12.node.EchoResponse\x12<\n" +
+	"\tSubmitJob\x12\x16.node.SubmitJobRequest\x1a\x17.node.SubmitJobResponse\x12?\n" +
+	"\fGetJobStatus\x12\x16.node.JobStatusRequest\x1a\x17.node.JobStatusResponse\x129\n" +
+	"\bListJobs\x12\x15.node.ListJobsRequest\x1a\x16.node.ListJobsResponseB\tZ\a./protob\x06proto3"
 
 var (
 	file_proto_node_proto_rawDescOnce sync.Once
@@ -885,7 +1320,7 @@ func file_proto_node_proto_rawDescGZIP() []byte {
 	return file_proto_node_proto_rawDescData
 }
 
-var file_proto_node_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
+var file_proto_node_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
 var file_proto_node_proto_goTypes = []any{
 	(*PeerInfo)(nil),          // 0: node.PeerInfo
 	(*PingRequest)(nil),       // 1: node.PingRequest
@@ -901,28 +1336,42 @@ var file_proto_node_proto_goTypes = []any{
 	(*ReplicateResponse)(nil), // 11: node.ReplicateResponse
 	(*GetRequest)(nil),        // 12: node.GetRequest
 	(*GetResponse)(nil),       // 13: node.GetResponse
+	(*SubmitJobRequest)(nil),  // 14: node.SubmitJobRequest
+	(*SubmitJobResponse)(nil), // 15: node.SubmitJobResponse
+	(*JobStatusRequest)(nil),  // 16: node.JobStatusRequest
+	(*JobStatusResponse)(nil), // 17: node.JobStatusResponse
+	(*ListJobsRequest)(nil),   // 18: node.ListJobsRequest
+	(*ListJobsResponse)(nil),  // 19: node.ListJobsResponse
+	(*JobSummary)(nil),        // 20: node.JobSummary
 }
 var file_proto_node_proto_depIdxs = []int32{
 	0,  // 0: node.PingRequest.peers:type_name -> node.PeerInfo
 	0,  // 1: node.PingResponse.peers:type_name -> node.PeerInfo
 	9,  // 2: node.PutResponse.replica_status:type_name -> node.ReplicaStatus
-	1,  // 3: node.NodeService.Ping:input_type -> node.PingRequest
-	3,  // 4: node.NodeService.Fetch:input_type -> node.FetchRequest
-	7,  // 5: node.NodeService.Put:input_type -> node.PutRequest
-	12, // 6: node.NodeService.Get:input_type -> node.GetRequest
-	10, // 7: node.NodeService.Replicate:input_type -> node.ReplicateRequest
-	5,  // 8: node.NodeService.Echo:input_type -> node.EchoRequest
-	2,  // 9: node.NodeService.Ping:output_type -> node.PingResponse
-	4,  // 10: node.NodeService.Fetch:output_type -> node.FetchResponse
-	8,  // 11: node.NodeService.Put:output_type -> node.PutResponse
-	13, // 12: node.NodeService.Get:output_type -> node.GetResponse
-	11, // 13: node.NodeService.Replicate:output_type -> node.ReplicateResponse
-	6,  // 14: node.NodeService.Echo:output_type -> node.EchoResponse
-	9,  // [9:15] is the sub-list for method output_type
-	3,  // [3:9] is the sub-list for method input_type
-	3,  // [3:3] is the sub-list for extension type_name
-	3,  // [3:3] is the sub-list for extension extendee
-	0,  // [0:3] is the sub-list for field type_name
+	20, // 3: node.ListJobsResponse.jobs:type_name -> node.JobSummary
+	1,  // 4: node.NodeService.Ping:input_type -> node.PingRequest
+	3,  // 5: node.NodeService.Fetch:input_type -> node.FetchRequest
+	7,  // 6: node.NodeService.Put:input_type -> node.PutRequest
+	12, // 7: node.NodeService.Get:input_type -> node.GetRequest
+	10, // 8: node.NodeService.Replicate:input_type -> node.ReplicateRequest
+	5,  // 9: node.NodeService.Echo:input_type -> node.EchoRequest
+	14, // 10: node.NodeService.SubmitJob:input_type -> node.SubmitJobRequest
+	16, // 11: node.NodeService.GetJobStatus:input_type -> node.JobStatusRequest
+	18, // 12: node.NodeService.ListJobs:input_type -> node.ListJobsRequest
+	2,  // 13: node.NodeService.Ping:output_type -> node.PingResponse
+	4,  // 14: node.NodeService.Fetch:output_type -> node.FetchResponse
+	8,  // 15: node.NodeService.Put:output_type -> node.PutResponse
+	13, // 16: node.NodeService.Get:output_type -> node.GetResponse
+	11, // 17: node.NodeService.Replicate:output_type -> node.ReplicateResponse
+	6,  // 18: node.NodeService.Echo:output_type -> node.EchoResponse
+	15, // 19: node.NodeService.SubmitJob:output_type -> node.SubmitJobResponse
+	17, // 20: node.NodeService.GetJobStatus:output_type -> node.JobStatusResponse
+	19, // 21: node.NodeService.ListJobs:output_type -> node.ListJobsResponse
+	13, // [13:22] is the sub-list for method output_type
+	4,  // [4:13] is the sub-list for method input_type
+	4,  // [4:4] is the sub-list for extension type_name
+	4,  // [4:4] is the sub-list for extension extendee
+	0,  // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_proto_node_proto_init() }
@@ -936,7 +1385,7 @@ func file_proto_node_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_node_proto_rawDesc), len(file_proto_node_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   14,
+			NumMessages:   21,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
