@@ -22,8 +22,8 @@ func NewWorkerPool(capacityPerWorker int) *WorkerPool {
 }
 
 // Admit finds the worker with the tightest fit for the given cost (best-fit).
-// Returns the worker ID and true if admitted, or empty string and false if no worker fits.
-func (wp *WorkerPool) Admit(cost int) (string, bool) {
+// Tracks the job ID on the worker. Returns the worker ID and true if admitted.
+func (wp *WorkerPool) Admit(jobID string, cost int) (string, bool) {
 	var best *Worker
 	for _, w := range wp.Workers {
 		avail := w.Capacity - w.Used
@@ -37,14 +37,21 @@ func (wp *WorkerPool) Admit(cost int) (string, bool) {
 		return "", false
 	}
 	best.Used += cost
+	best.Jobs = append(best.Jobs, jobID)
 	return best.ID, true
 }
 
-// Release frees capacity on the specified worker.
-func (wp *WorkerPool) Release(workerID string, cost int) {
+// Release frees capacity on the specified worker and removes the job from its job list.
+func (wp *WorkerPool) Release(workerID string, jobID string, cost int) {
 	for _, w := range wp.Workers {
 		if w.ID == workerID {
 			w.Used -= cost
+			for i, id := range w.Jobs {
+				if id == jobID {
+					w.Jobs = append(w.Jobs[:i], w.Jobs[i+1:]...)
+					break
+				}
+			}
 			return
 		}
 	}

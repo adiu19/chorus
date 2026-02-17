@@ -52,7 +52,7 @@ func (s *Scheduler) Tick() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.tick++
-	// 2.2: s.reclaim()
+	s.reclaim()
 	// 2.3: s.admit()
 }
 
@@ -61,6 +61,17 @@ func (s *Scheduler) CurrentTick() uint64 {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.tick
+}
+
+// reclaim scans running jobs, frees capacity for completed ones, and removes them.
+// Must be called with s.mu held.
+func (s *Scheduler) reclaim() {
+	for id, job := range s.running {
+		if job.Status == Completed {
+			s.pool.Release(job.WorkerID, job.ID, job.Cost)
+			delete(s.running, id)
+		}
+	}
 }
 
 // Stats returns a snapshot of the scheduler's current state.
