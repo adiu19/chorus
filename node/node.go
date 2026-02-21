@@ -81,6 +81,7 @@ func NewNode(id, port string, seeds []string) *Node {
 	node.scheduler = scheduler.New(scheduler.Config{
 		CapacityPerWorker: 10,
 		TickInterval:      500 * time.Millisecond,
+		MaxPendingJobs:    100,
 	})
 	node.scheduler.Start()
 
@@ -433,7 +434,15 @@ func (n *Node) SubmitJob(ctx context.Context, req *pb.SubmitJobRequest) (*pb.Sub
 		Duration: time.Duration(req.DurationMs) * time.Millisecond,
 	}
 
-	n.scheduler.Submit(job)
+	if err := n.scheduler.Submit(job); err != nil {
+		log.Printf("[%s] SubmitJob id=%s rejected: %v", n.ID, req.Id, err)
+		return &pb.SubmitJobResponse{
+			Id:     req.Id,
+			Status: "rejected",
+			Reason: err.Error(),
+		}, nil
+	}
+
 	log.Printf("[%s] SubmitJob id=%s priority=%d cost=%d duration=%dms",
 		n.ID, req.Id, req.Priority, req.Cost, req.DurationMs)
 

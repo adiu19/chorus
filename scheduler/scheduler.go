@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"container/heap"
+	"fmt"
 	"log"
 	"math/rand"
 	"sync"
@@ -12,6 +13,7 @@ import (
 type Config struct {
 	CapacityPerWorker int
 	TickInterval      time.Duration
+	MaxPendingJobs    int // 0 means unlimited
 }
 
 // Scheduler is the central coordinator that matches pending jobs to workers.
@@ -25,7 +27,7 @@ type Scheduler struct {
 	pool        *WorkerPool
 	completions chan string   // worker goroutines send job IDs here when done
 	stop        chan struct{} // signals the tick loop to shut down
-	allJobs     sync.Map     // job ID -> *Job; lock-free registry for read-heavy status queries
+	allJobs     sync.Map      // job ID -> *Job; lock-free registry for read-heavy status queries
 }
 
 // New creates a Scheduler with the given config.
@@ -70,13 +72,23 @@ func (s *Scheduler) Stop() {
 }
 
 // Submit adds a job to the pending queue. Thread-safe.
-func (s *Scheduler) Submit(job *Job) {
+// Returns an error if the pending queue is at capacity.
+func (s *Scheduler) Submit(job *Job) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	if s.config.MaxPendingJobs > 0 && s.pending.Len() >= s.config.MaxPendingJobs {
+		job.Status = Rejected
+		job.CreatedAt = time.Now()
+		s.allJobs.Store(job.ID, job)
+		return fmt.Errorf("pending queue full (%d/%d)", s.pending.Len(), s.config.MaxPendingJobs)
+	}
+
 	job.Status = Pending
 	job.CreatedAt = time.Now()
 	s.allJobs.Store(job.ID, job)
 	PushJob(s.pending, job)
+	return nil
 }
 
 // Tick runs one scheduler cycle. The tick is the core event loop primitive:
