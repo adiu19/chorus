@@ -12,9 +12,12 @@ import (
 	"github.com/chorus/cluster"
 	pb "github.com/chorus/proto"
 	"github.com/chorus/ring"
+	"github.com/chorus/scheduler"
 	"github.com/chorus/wal"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
 )
 
 // ReplicationFactor is the number of nodes that store each key
@@ -26,9 +29,10 @@ type Node struct {
 	Port string
 	Addr string // "localhost:port" - this node's address
 
-	peers *cluster.PeerList
-	ring  *ring.Ring
-	wal   *wal.WAL
+	peers     *cluster.PeerList
+	ring      *ring.Ring
+	wal       *wal.WAL
+	scheduler *scheduler.Scheduler
 
 	mu        sync.RWMutex
 	heartbeat int64 // this node's heartbeat counter, only we increment this
@@ -72,6 +76,13 @@ func NewNode(id, port string, seeds []string) *Node {
 			node.peers.AddSeedAddr(seedAddr)
 		}
 	}
+
+	// Initialize scheduler
+	node.scheduler = scheduler.New(scheduler.Config{
+		CapacityPerWorker: 10,
+		TickInterval:      500 * time.Millisecond,
+	})
+	node.scheduler.Start()
 
 	// Initial ring with just ourselves
 	node.ring.Rebalance([]string{id})
@@ -399,6 +410,36 @@ func (n *Node) Echo(ctx context.Context, req *pb.EchoRequest) (*pb.EchoResponse,
 		NodeId:   n.ID,
 		Message:  fmt.Sprintf("echo from %s: %s", n.ID, req.Message),
 		HopCount: req.HopCount + 1,
+	}, nil
+}
+
+// SubmitJob RPC - validates and enqueues a job for scheduling
+func (n *Node) SubmitJob(ctx context.Context, req *pb.SubmitJobRequest) (*pb.SubmitJobResponse, error) {
+	// Validate required fields
+	if req.Id == "" {
+		return nil, status.Error(codes.InvalidArgument, "job ID is required")
+	}
+	if req.Cost <= 0 {
+		return nil, status.Error(codes.InvalidArgument, "cost must be positive")
+	}
+	if req.DurationMs <= 0 {
+		return nil, status.Error(codes.InvalidArgument, "duration_ms must be positive")
+	}
+
+	job := &scheduler.Job{
+		ID:       req.Id,
+		Priority: int(req.Priority),
+		Cost:     int(req.Cost),
+		Duration: time.Duration(req.DurationMs) * time.Millisecond,
+	}
+
+	n.scheduler.Submit(job)
+	log.Printf("[%s] SubmitJob id=%s priority=%d cost=%d duration=%dms",
+		n.ID, req.Id, req.Priority, req.Cost, req.DurationMs)
+
+	return &pb.SubmitJobResponse{
+		Id:     req.Id,
+		Status: "pending",
 	}, nil
 }
 
