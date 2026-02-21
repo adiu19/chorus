@@ -25,6 +25,7 @@ type Scheduler struct {
 	pool        *WorkerPool
 	completions chan string   // worker goroutines send job IDs here when done
 	stop        chan struct{} // signals the tick loop to shut down
+	allJobs     sync.Map     // job ID -> *Job; lock-free registry for read-heavy status queries
 }
 
 // New creates a Scheduler with the given config.
@@ -74,6 +75,7 @@ func (s *Scheduler) Submit(job *Job) {
 	defer s.mu.Unlock()
 	job.Status = Pending
 	job.CreatedAt = time.Now()
+	s.allJobs.Store(job.ID, job)
 	PushJob(s.pending, job)
 }
 
@@ -179,6 +181,25 @@ func (s *Scheduler) execute(job *Job) {
 		time.Sleep(job.Duration + jitter)
 		s.completions <- job.ID
 	}()
+}
+
+// GetJob returns a job by ID from the registry. Lock-free; may return slightly stale status.
+func (s *Scheduler) GetJob(id string) (*Job, bool) {
+	v, ok := s.allJobs.Load(id)
+	if !ok {
+		return nil, false
+	}
+	return v.(*Job), true
+}
+
+// GetAllJobs returns all jobs in the registry. Lock-free; may return slightly stale status.
+func (s *Scheduler) GetAllJobs() []*Job {
+	var jobs []*Job
+	s.allJobs.Range(func(_, v any) bool {
+		jobs = append(jobs, v.(*Job))
+		return true
+	})
+	return jobs
 }
 
 // Stats returns a snapshot of the scheduler's current state.

@@ -443,6 +443,44 @@ func (n *Node) SubmitJob(ctx context.Context, req *pb.SubmitJobRequest) (*pb.Sub
 	}, nil
 }
 
+// GetJobStatus RPC - returns the current status of a job
+func (n *Node) GetJobStatus(ctx context.Context, req *pb.JobStatusRequest) (*pb.JobStatusResponse, error) {
+	job, ok := n.scheduler.GetJob(req.Id)
+	if !ok {
+		return &pb.JobStatusResponse{
+			Id:     req.Id,
+			Status: "unknown",
+		}, nil
+	}
+
+	return &pb.JobStatusResponse{
+		Id:       job.ID,
+		Status:   job.Status.String(),
+		WorkerId: job.WorkerID,
+		Priority: int32(job.Priority),
+		Cost:     int32(job.Cost),
+	}, nil
+}
+
+// ListJobs RPC - returns a summary of all jobs known to the scheduler
+func (n *Node) ListJobs(ctx context.Context, req *pb.ListJobsRequest) (*pb.ListJobsResponse, error) {
+	jobs := n.scheduler.GetAllJobs()
+	summaries := make([]*pb.JobSummary, len(jobs))
+	for i, job := range jobs {
+		summaries[i] = &pb.JobSummary{
+			Id:       job.ID,
+			Status:   job.Status.String(),
+			Priority: int32(job.Priority),
+			Cost:     int32(job.Cost),
+			WorkerId: job.WorkerID,
+		}
+	}
+
+	return &pb.ListJobsResponse{
+		Jobs: summaries,
+	}, nil
+}
+
 // StartGossip begins the background gossip loop.
 // It periodically pings a random peer to exchange peer info.
 // Cancel the context to stop the loop.
