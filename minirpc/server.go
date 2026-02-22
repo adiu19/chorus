@@ -6,32 +6,44 @@ import (
 	"sync"
 )
 
+// HandlerFunc is a type definition for a function that'll act on our stream
+type HandlerFunc func(stream *Stream)
+
 // Server encapsulates our server def
 type Server struct {
-	ln    net.Listener
-	mu    sync.Mutex
-	conns map[*conn]struct{}
+	ln       net.Listener
+	mu       sync.Mutex
+	conns    map[*conn]struct{}
+	handlers map[string]HandlerFunc
 }
 
 type conn struct {
-	server  *Server
-	nc      net.Conn
-	writeCh chan *Frame // a buffered channel that acts as the outbound queue.
+	server        *Server
+	nc            net.Conn
+	writeCh       chan *Frame // a buffered channel that acts as the outbound queue.
+	activeStreams map[uint32]*Stream
 }
 
 // NewServer creates an instance of the server
 func NewServer() *Server {
 	return &Server{
-		conns: make(map[*conn]struct{}),
+		conns:    make(map[*conn]struct{}),
+		handlers: make(map[string]HandlerFunc),
 	}
 }
 
 func (s *Server) newConn(nc net.Conn) *conn {
 	return &conn{
-		server:  s,
-		nc:      nc,
-		writeCh: make(chan *Frame, 64),
+		server:        s,
+		nc:            nc,
+		writeCh:       make(chan *Frame, 64),
+		activeStreams: make(map[uint32]*Stream),
 	}
+}
+
+// Handle registers a method into our server
+func (s *Server) Handle(method string, fn HandlerFunc) {
+	s.handlers[method] = fn
 }
 
 // serve() starts two loops:
@@ -76,6 +88,26 @@ func (c *conn) readLoop() {
 		}
 		log.Printf("minirpc: frame stream=%d type=%d method=%q len=%d",
 			f.StreamID, f.Type, f.Method, len(f.Payload))
+
+		st, exists := c.activeStreams[f.StreamID]
+		if !exists {
+			handler, ok := c.server.handlers[f.Method]
+			if !ok {
+				log.Printf("minirpc: unknown method: %q", f.Method)
+				continue
+			}
+
+			st = &Stream{
+				ID:       f.StreamID,
+				recvChan: make(chan *Frame, 16),
+				sendChan: c.writeCh, // all streams share the same write channel as the TCP conn
+			}
+
+			c.activeStreams[f.StreamID] = st
+			go handler(st) // spawn a goroutine for the stream
+		}
+
+		st.recvChan <- f
 	}
 }
 
