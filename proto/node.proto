@@ -32,6 +32,9 @@ service NodeService {
 
   // ListJobs returns a summary of all jobs known to the scheduler
   rpc ListJobs(ListJobsRequest) returns (ListJobsResponse);
+
+  // RunJob submits a job and streams output back to the client
+  rpc RunJob(RunJobRequest) returns (stream RunJobResponse);
 }
 
 // PeerInfo contains information about a peer node
@@ -114,11 +117,17 @@ message GetResponse {
 
 // --- Scheduler messages ---
 
+message PromptContinuation {
+  string prompt = 1;          // the user prompt to continue from
+}
+
 message SubmitJobRequest {
   string id = 1;            // client-provided job ID
   int32 priority = 2;       // lower value = higher priority
   int32 cost = 3;           // capacity units consumed
-  int64 duration_ms = 4;    // simulated execution time in milliseconds
+  oneof job_type {
+    PromptContinuation prompt_continuation = 100;
+  }
 }
 
 message SubmitJobResponse {
@@ -151,4 +160,42 @@ message JobSummary {
   int32 priority = 3;
   int32 cost = 4;
   string worker_id = 5;
+}
+
+// --- Streaming job execution ---
+
+message RunJobRequest {
+  string id = 1;            // client-provided job ID
+  int32 priority = 2;       // lower value = higher priority
+  int32 cost = 3;           // capacity units consumed
+  oneof job_type {
+    PromptContinuation prompt_continuation = 100;
+  }
+}
+
+message RunJobResponse {
+  string job_id = 1;
+  oneof event {
+    JobQueued queued = 100;
+    JobStarted started = 101;
+    OutputChunk chunk = 102;
+    JobCompleted completed = 103;
+    JobFailed failed = 104;
+  }
+}
+
+message JobQueued {}
+
+message JobStarted {
+  string worker_id = 1;
+}
+
+message OutputChunk {
+  string token = 1;         // a token or chunk of text
+}
+
+message JobCompleted {}
+
+message JobFailed {
+  string error = 1;
 }

@@ -28,6 +28,7 @@ const (
 	NodeService_SubmitJob_FullMethodName    = "/node.NodeService/SubmitJob"
 	NodeService_GetJobStatus_FullMethodName = "/node.NodeService/GetJobStatus"
 	NodeService_ListJobs_FullMethodName     = "/node.NodeService/ListJobs"
+	NodeService_RunJob_FullMethodName       = "/node.NodeService/RunJob"
 )
 
 // NodeServiceClient is the client API for NodeService service.
@@ -54,6 +55,8 @@ type NodeServiceClient interface {
 	GetJobStatus(ctx context.Context, in *JobStatusRequest, opts ...grpc.CallOption) (*JobStatusResponse, error)
 	// ListJobs returns a summary of all jobs known to the scheduler
 	ListJobs(ctx context.Context, in *ListJobsRequest, opts ...grpc.CallOption) (*ListJobsResponse, error)
+	// RunJob submits a job and streams output back to the client
+	RunJob(ctx context.Context, in *RunJobRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[RunJobResponse], error)
 }
 
 type nodeServiceClient struct {
@@ -154,6 +157,25 @@ func (c *nodeServiceClient) ListJobs(ctx context.Context, in *ListJobsRequest, o
 	return out, nil
 }
 
+func (c *nodeServiceClient) RunJob(ctx context.Context, in *RunJobRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[RunJobResponse], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &NodeService_ServiceDesc.Streams[0], NodeService_RunJob_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[RunJobRequest, RunJobResponse]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type NodeService_RunJobClient = grpc.ServerStreamingClient[RunJobResponse]
+
 // NodeServiceServer is the server API for NodeService service.
 // All implementations must embed UnimplementedNodeServiceServer
 // for forward compatibility.
@@ -178,6 +200,8 @@ type NodeServiceServer interface {
 	GetJobStatus(context.Context, *JobStatusRequest) (*JobStatusResponse, error)
 	// ListJobs returns a summary of all jobs known to the scheduler
 	ListJobs(context.Context, *ListJobsRequest) (*ListJobsResponse, error)
+	// RunJob submits a job and streams output back to the client
+	RunJob(*RunJobRequest, grpc.ServerStreamingServer[RunJobResponse]) error
 	mustEmbedUnimplementedNodeServiceServer()
 }
 
@@ -214,6 +238,9 @@ func (UnimplementedNodeServiceServer) GetJobStatus(context.Context, *JobStatusRe
 }
 func (UnimplementedNodeServiceServer) ListJobs(context.Context, *ListJobsRequest) (*ListJobsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListJobs not implemented")
+}
+func (UnimplementedNodeServiceServer) RunJob(*RunJobRequest, grpc.ServerStreamingServer[RunJobResponse]) error {
+	return status.Errorf(codes.Unimplemented, "method RunJob not implemented")
 }
 func (UnimplementedNodeServiceServer) mustEmbedUnimplementedNodeServiceServer() {}
 func (UnimplementedNodeServiceServer) testEmbeddedByValue()                     {}
@@ -398,6 +425,17 @@ func _NodeService_ListJobs_Handler(srv interface{}, ctx context.Context, dec fun
 	return interceptor(ctx, in, info, handler)
 }
 
+func _NodeService_RunJob_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(RunJobRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(NodeServiceServer).RunJob(m, &grpc.GenericServerStream[RunJobRequest, RunJobResponse]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type NodeService_RunJobServer = grpc.ServerStreamingServer[RunJobResponse]
+
 // NodeService_ServiceDesc is the grpc.ServiceDesc for NodeService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -442,6 +480,12 @@ var NodeService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _NodeService_ListJobs_Handler,
 		},
 	},
-	Streams:  []grpc.StreamDesc{},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "RunJob",
+			Handler:       _NodeService_RunJob_Handler,
+			ServerStreams: true,
+		},
+	},
 	Metadata: "proto/node.proto",
 }

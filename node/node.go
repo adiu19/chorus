@@ -423,15 +423,11 @@ func (n *Node) SubmitJob(ctx context.Context, req *pb.SubmitJobRequest) (*pb.Sub
 	if req.Cost <= 0 {
 		return nil, status.Error(codes.InvalidArgument, "cost must be positive")
 	}
-	if req.DurationMs <= 0 {
-		return nil, status.Error(codes.InvalidArgument, "duration_ms must be positive")
-	}
 
 	job := &scheduler.Job{
 		ID:       req.Id,
 		Priority: int(req.Priority),
 		Cost:     int(req.Cost),
-		Duration: time.Duration(req.DurationMs) * time.Millisecond,
 	}
 
 	if err := n.scheduler.Submit(job); err != nil {
@@ -443,8 +439,8 @@ func (n *Node) SubmitJob(ctx context.Context, req *pb.SubmitJobRequest) (*pb.Sub
 		}, nil
 	}
 
-	log.Printf("[%s] SubmitJob id=%s priority=%d cost=%d duration=%dms",
-		n.ID, req.Id, req.Priority, req.Cost, req.DurationMs)
+	log.Printf("[%s] SubmitJob id=%s priority=%d cost=%d",
+		n.ID, req.Id, req.Priority, req.Cost)
 
 	return &pb.SubmitJobResponse{
 		Id:     req.Id,
