@@ -39,7 +39,6 @@ func main() {
 	// Start gossip in background
 	ctx, cancel := context.WithCancel(context.Background())
 	go n.StartGossip(ctx, 5*time.Second)
-
 	go func() {
 		sigCh := make(chan os.Signal, 1)
 		signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)

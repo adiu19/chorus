@@ -72,7 +72,11 @@ func (c *conn) readLoop() {
 	// 	- closing writeCh causes range c.writeCh in the write loop to exit
 	// 	- so both goroutines shut down cleanly when the reader dies.
 	defer func() {
-		close(c.writeCh)
+		// close all read channels for streams
+		for _, st := range c.activeStreams {
+			close(st.recvChan)
+		}
+		close(c.writeCh) // close the write channel for the TCP conn
 		c.nc.Close()
 		c.server.mu.Lock()
 		delete(c.server.conns, c)
