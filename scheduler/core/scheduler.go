@@ -1,12 +1,14 @@
-package scheduler
+package core
 
 import (
 	"container/heap"
 	"fmt"
 	"log"
-	"math/rand"
 	"sync"
 	"time"
+
+	"github.com/chorus/scheduler/job"
+	"github.com/chorus/scheduler/worker"
 )
 
 // Config holds the scheduler's tunable parameters.
@@ -14,6 +16,7 @@ type Config struct {
 	CapacityPerWorker int
 	TickInterval      time.Duration
 	MaxPendingJobs    int // 0 means unlimited
+	Executors         map[string]worker.Executor
 }
 
 // Scheduler is the central coordinator that matches pending jobs to workers.
@@ -23,11 +26,11 @@ type Scheduler struct {
 	config      Config
 	tick        uint64 // monotonically increasing tick counter
 	pending     *PriorityQueue
-	running     map[string]*Job // job ID -> job
-	pool        *WorkerPool
+	running     map[string]*job.Job // job ID -> job
+	pool        *worker.WorkerPool
 	completions chan string   // worker goroutines send job IDs here when done
 	stop        chan struct{} // signals the tick loop to shut down
-	allJobs     sync.Map      // job ID -> *Job; lock-free registry for read-heavy status queries
+	allJobs     sync.Map     // job ID -> *Job; lock-free registry for read-heavy status queries
 }
 
 // New creates a Scheduler with the given config.
@@ -39,8 +42,8 @@ func New(cfg Config) *Scheduler {
 	return &Scheduler{
 		config:      cfg,
 		pending:     pq,
-		running:     make(map[string]*Job),
-		pool:        NewWorkerPool(cfg.CapacityPerWorker),
+		running:     make(map[string]*job.Job),
+		pool:        worker.NewWorkerPool(cfg.CapacityPerWorker, cfg.Executors),
 		completions: make(chan string, 64),
 	}
 }
@@ -73,21 +76,21 @@ func (s *Scheduler) Stop() {
 
 // Submit adds a job to the pending queue. Thread-safe.
 // Returns an error if the pending queue is at capacity.
-func (s *Scheduler) Submit(job *Job) error {
+func (s *Scheduler) Submit(j *job.Job) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	if s.config.MaxPendingJobs > 0 && s.pending.Len() >= s.config.MaxPendingJobs {
-		job.Status = Rejected
-		job.CreatedAt = time.Now()
-		s.allJobs.Store(job.ID, job)
+		j.Status = job.Rejected
+		j.CreatedAt = time.Now()
+		s.allJobs.Store(j.ID, j)
 		return fmt.Errorf("pending queue full (%d/%d)", s.pending.Len(), s.config.MaxPendingJobs)
 	}
 
-	job.Status = Pending
-	job.CreatedAt = time.Now()
-	s.allJobs.Store(job.ID, job)
-	PushJob(s.pending, job)
+	j.Status = job.Pending
+	j.CreatedAt = time.Now()
+	s.allJobs.Store(j.ID, j)
+	PushJob(s.pending, j)
 	return nil
 }
 
@@ -141,8 +144,8 @@ func (s *Scheduler) drain() {
 	n := len(s.completions) // snapshot the length
 	for i := 0; i < n; i++ {
 		id := <-s.completions
-		if job, ok := s.running[id]; ok {
-			job.Status = Completed
+		if j, ok := s.running[id]; ok {
+			j.Status = job.Completed
 		}
 	}
 }
@@ -150,9 +153,9 @@ func (s *Scheduler) drain() {
 // reclaim scans running jobs, frees capacity for completed ones, and removes them.
 // Must be called with s.mu held.
 func (s *Scheduler) reclaim() {
-	for id, job := range s.running {
-		if job.Status == Completed {
-			s.pool.Release(job.WorkerID, job.ID, job.Cost)
+	for id, j := range s.running {
+		if j.Status == job.Completed {
+			s.pool.Release(j.WorkerID, j.ID, j.Cost)
 			delete(s.running, id)
 		}
 	}
@@ -163,52 +166,46 @@ func (s *Scheduler) reclaim() {
 // Must be called with s.mu held.
 func (s *Scheduler) admit() {
 	// Drain the PQ into a slice so we can try each job and re-queue skipped ones.
-	var skipped []*Job
+	var skipped []*job.Job
 	for s.pending.Len() > 0 {
-		job := PopJob(s.pending)
-		workerID, ok := s.pool.Admit(job.ID, job.Cost)
+		j := PopJob(s.pending)
+		workerID, ok := s.pool.Admit(j.ID, j.Cost)
 		if ok {
-			job.Status = Running
-			job.WorkerID = workerID
-			job.StartedAt = time.Now()
-			s.running[job.ID] = job
-			s.execute(job)
+			j.Status = job.Running
+			j.WorkerID = workerID
+			j.StartedAt = time.Now()
+			s.running[j.ID] = j
+			s.execute(j)
 		} else {
-			skipped = append(skipped, job)
+			skipped = append(skipped, j)
 		}
 	}
 	// Re-queue jobs that didn't fit
-	for _, job := range skipped {
-		PushJob(s.pending, job)
+	for _, j := range skipped {
+		PushJob(s.pending, j)
 	}
 }
 
-// execute spawns a goroutine that simulates job work by sleeping for the
-// job's duration (plus a small random jitter), then signals completion.
-// Must be called with s.mu held (reads job fields, but the goroutine itself
-// only sends on the completions channel — no lock needed inside).
-func (s *Scheduler) execute(job *Job) {
-	jitter := time.Duration(rand.Intn(50)) * time.Millisecond
-	go func() {
-		time.Sleep(job.Duration + jitter)
-		s.completions <- job.ID
-	}()
+// execute fetches the worker that owns this job, and then dispatches the job to that worker
+func (s *Scheduler) execute(j *job.Job) {
+	w := s.pool.GetWorker(j.WorkerID)
+	w.Execute(j, s.completions)
 }
 
 // GetJob returns a job by ID from the registry. Lock-free; may return slightly stale status.
-func (s *Scheduler) GetJob(id string) (*Job, bool) {
+func (s *Scheduler) GetJob(id string) (*job.Job, bool) {
 	v, ok := s.allJobs.Load(id)
 	if !ok {
 		return nil, false
 	}
-	return v.(*Job), true
+	return v.(*job.Job), true
 }
 
 // GetAllJobs returns all jobs in the registry. Lock-free; may return slightly stale status.
-func (s *Scheduler) GetAllJobs() []*Job {
-	var jobs []*Job
+func (s *Scheduler) GetAllJobs() []*job.Job {
+	var jobs []*job.Job
 	s.allJobs.Range(func(_, v any) bool {
-		jobs = append(jobs, v.(*Job))
+		jobs = append(jobs, v.(*job.Job))
 		return true
 	})
 	return jobs

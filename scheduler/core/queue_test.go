@@ -1,8 +1,10 @@
-package scheduler
+package core
 
 import (
 	"container/heap"
 	"testing"
+
+	"github.com/chorus/scheduler/job"
 )
 
 func TestPriorityQueue_PopOrder(t *testing.T) {
@@ -10,7 +12,7 @@ func TestPriorityQueue_PopOrder(t *testing.T) {
 	heap.Init(pq)
 
 	// Push jobs in random priority order
-	jobs := []*Job{
+	jobs := []*job.Job{
 		{ID: "low", Priority: 10},
 		{ID: "high", Priority: 1},
 		{ID: "mid", Priority: 5},
@@ -65,7 +67,7 @@ func TestPriorityQueue_Empty(t *testing.T) {
 	}
 
 	// Push one, pop one, verify empty again
-	PushJob(pq, &Job{ID: "only", Priority: 3})
+	PushJob(pq, &job.Job{ID: "only", Priority: 3})
 	got := PopJob(pq)
 	if got.ID != "only" {
 		t.Errorf("expected 'only', got %s", got.ID)
@@ -79,7 +81,7 @@ func TestPriorityQueue_SingleElement(t *testing.T) {
 	pq := &PriorityQueue{}
 	heap.Init(pq)
 
-	PushJob(pq, &Job{ID: "solo", Priority: 42})
+	PushJob(pq, &job.Job{ID: "solo", Priority: 42})
 	if pq.Len() != 1 {
 		t.Fatalf("expected len 1, got %d", pq.Len())
 	}

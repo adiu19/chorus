@@ -1,10 +1,14 @@
-package scheduler
+package core
 
-import "container/heap"
+import (
+	"container/heap"
+
+	"github.com/chorus/scheduler/job"
+)
 
 // PriorityQueue implements heap.Interface for Jobs.
 // Lower Priority value = higher scheduling priority (popped first).
-type PriorityQueue []*Job
+type PriorityQueue []*job.Job
 
 func (pq PriorityQueue) Len() int { return len(pq) }
 
@@ -18,25 +22,25 @@ func (pq PriorityQueue) Swap(i, j int) {
 
 // Push adds a job to the queue. Called by heap.Push — do not call directly.
 func (pq *PriorityQueue) Push(x any) {
-	*pq = append(*pq, x.(*Job))
+	*pq = append(*pq, x.(*job.Job))
 }
 
 // Pop removes and returns the highest-priority job. Called by heap.Pop — do not call directly.
 func (pq *PriorityQueue) Pop() any {
 	old := *pq
 	n := len(old)
-	job := old[n-1]
+	j := old[n-1]
 	old[n-1] = nil // avoid memory leak
 	*pq = old[:n-1]
-	return job
+	return j
 }
 
 // PushJob adds a job to the priority queue.
-func PushJob(pq *PriorityQueue, job *Job) {
-	heap.Push(pq, job)
+func PushJob(pq *PriorityQueue, j *job.Job) {
+	heap.Push(pq, j)
 }
 
 // PopJob removes and returns the highest-priority (lowest Priority value) job.
-func PopJob(pq *PriorityQueue) *Job {
-	return heap.Pop(pq).(*Job)
+func PopJob(pq *PriorityQueue) *job.Job {
+	return heap.Pop(pq).(*job.Job)
 }

@@ -12,7 +12,10 @@ import (
 	"github.com/chorus/cluster"
 	pb "github.com/chorus/proto"
 	"github.com/chorus/ring"
-	"github.com/chorus/scheduler"
+	"github.com/chorus/scheduler/core"
+	"github.com/chorus/scheduler/executor/sim"
+	"github.com/chorus/scheduler/job"
+	"github.com/chorus/scheduler/worker"
 	"github.com/chorus/wal"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -32,7 +35,7 @@ type Node struct {
 	peers     *cluster.PeerList
 	ring      *ring.Ring
 	wal       *wal.WAL
-	scheduler *scheduler.Scheduler
+	scheduler *core.Scheduler
 
 	mu        sync.RWMutex
 	heartbeat int64 // this node's heartbeat counter, only we increment this
@@ -78,10 +81,13 @@ func NewNode(id, port string, seeds []string) *Node {
 	}
 
 	// Initialize scheduler
-	node.scheduler = scheduler.New(scheduler.Config{
+	node.scheduler = core.New(core.Config{
 		CapacityPerWorker: 10,
 		TickInterval:      500 * time.Millisecond,
 		MaxPendingJobs:    100,
+		Executors: map[string]worker.Executor{
+			"": sim.NewExecutor(),
+		},
 	})
 	node.scheduler.Start()
 
@@ -424,7 +430,7 @@ func (n *Node) SubmitJob(ctx context.Context, req *pb.SubmitJobRequest) (*pb.Sub
 		return nil, status.Error(codes.InvalidArgument, "cost must be positive")
 	}
 
-	job := &scheduler.Job{
+	job := &job.Job{
 		ID:       req.Id,
 		Priority: int(req.Priority),
 		Cost:     int(req.Cost),
@@ -455,7 +461,7 @@ func (n *Node) RunJob(req *pb.RunJobRequest, stream grpc.ServerStreamingServer[p
 		return status.Error(codes.InvalidArgument, "job ID is required")
 	}
 
-	job := &scheduler.Job{
+	job := &job.Job{
 		ID:       req.Id,
 		Priority: int(req.Priority),
 		Cost:     int(req.Cost),

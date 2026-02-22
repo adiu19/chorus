@@ -1,12 +1,21 @@
-package scheduler
+package core
 
 import (
 	"fmt"
 	"testing"
+
+	"github.com/chorus/scheduler/executor/sim"
+	"github.com/chorus/scheduler/worker"
 )
 
+func newTestPool(capacityPerWorker int) *worker.WorkerPool {
+	return worker.NewWorkerPool(capacityPerWorker, map[string]worker.Executor{
+		"": sim.NewExecutor(),
+	})
+}
+
 func TestWorkerPool_AdmitAndRelease(t *testing.T) {
-	pool := NewWorkerPool(10)
+	pool := newTestPool(10)
 
 	// Should have 4 workers with 40 total capacity
 	if avail := pool.Available(); avail != 40 {
@@ -46,10 +55,10 @@ func TestWorkerPool_AdmitAndRelease(t *testing.T) {
 }
 
 func TestWorkerPool_RejectWhenFull(t *testing.T) {
-	pool := NewWorkerPool(5)
+	pool := newTestPool(5)
 
 	// Fill every worker to capacity
-	for i := 0; i < NumWorkers; i++ {
+	for i := 0; i < worker.NumWorkers; i++ {
 		_, ok := pool.Admit(fmt.Sprintf("job-%d", i), 5)
 		if !ok {
 			t.Fatalf("expected admit on worker-%d", i)
@@ -68,7 +77,7 @@ func TestWorkerPool_RejectWhenFull(t *testing.T) {
 }
 
 func TestWorkerPool_CostLargerThanAnyWorker(t *testing.T) {
-	pool := NewWorkerPool(10)
+	pool := newTestPool(10)
 
 	// A job that costs more than any single worker can handle
 	_, ok := pool.Admit("job-huge", 11)
