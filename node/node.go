@@ -428,6 +428,7 @@ func (n *Node) SubmitJob(ctx context.Context, req *pb.SubmitJobRequest) (*pb.Sub
 		ID:       req.Id,
 		Priority: int(req.Priority),
 		Cost:     int(req.Cost),
+		OutputCh: make(chan string),
 	}
 
 	if err := n.scheduler.Submit(job); err != nil {
@@ -446,6 +447,44 @@ func (n *Node) SubmitJob(ctx context.Context, req *pb.SubmitJobRequest) (*pb.Sub
 		Id:     req.Id,
 		Status: "pending",
 	}, nil
+}
+
+// RunJob is a handler for a streaming request
+func (n *Node) RunJob(req *pb.RunJobRequest, stream grpc.ServerStreamingServer[pb.RunJobResponse]) error {
+	if req.Id == "" {
+		return status.Error(codes.InvalidArgument, "job ID is required")
+	}
+
+	job := &scheduler.Job{
+		ID:       req.Id,
+		Priority: int(req.Priority),
+		Cost:     int(req.Cost),
+		OutputCh: make(chan string),
+	}
+
+	if err := n.scheduler.Submit(job); err != nil {
+		return status.Errorf(codes.ResourceExhausted, "rejected: %v", err)
+	}
+
+	// Job is queued
+	stream.Send(&pb.RunJobResponse{
+		JobId: req.Id,
+		Event: &pb.RunJobResponse_Queued{Queued: &pb.JobQueued{}},
+	})
+
+	for token := range job.OutputCh {
+		stream.Send(&pb.RunJobResponse{
+			JobId: req.Id,
+			Event: &pb.RunJobResponse_Chunk{Chunk: &pb.OutputChunk{Token: token}},
+		})
+	}
+
+	stream.Send(&pb.RunJobResponse{
+		JobId: req.Id,
+		Event: &pb.RunJobResponse_Completed{Completed: &pb.JobCompleted{}},
+	})
+
+	return nil
 }
 
 // GetJobStatus RPC - returns the current status of a job

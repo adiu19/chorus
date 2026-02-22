@@ -34,9 +34,10 @@ type Job struct {
 	Cost      int           // Capacity units this job consumes on a worker
 	Duration  time.Duration // Simulated execution time
 	Status    JobStatus
-	WorkerID  string    // ID of the assigned worker (empty if not running)
+	WorkerID  string // ID of the assigned worker (empty if not running)
 	CreatedAt time.Time
-	StartedAt time.Time // When the job transitioned to Running
+	StartedAt time.Time   // When the job transitioned to Running
+	OutputCh  chan string // output channel where a job will send chunked strings
 }
 
 // Worker represents a goroutine-backed executor with a fixed capacity budget.
