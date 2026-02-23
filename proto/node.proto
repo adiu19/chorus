@@ -121,13 +121,17 @@ message PromptContinuation {
   string prompt = 1;          // the user prompt to continue from
 }
 
+message JobType {
+  oneof type {
+    PromptContinuation prompt_continuation = 100;
+  }
+}
+
 message SubmitJobRequest {
   string id = 1;            // client-provided job ID
   int32 priority = 2;       // lower value = higher priority
   int32 cost = 3;           // capacity units consumed
-  oneof job_type {
-    PromptContinuation prompt_continuation = 100;
-  }
+  JobType job_type = 4;
 }
 
 message SubmitJobResponse {
@@ -168,9 +172,7 @@ message RunJobRequest {
   string id = 1;            // client-provided job ID
   int32 priority = 2;       // lower value = higher priority
   int32 cost = 3;           // capacity units consumed
-  oneof job_type {
-    PromptContinuation prompt_continuation = 100;
-  }
+  JobType job_type = 4;
 }
 
 message RunJobResponse {

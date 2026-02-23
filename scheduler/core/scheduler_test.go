@@ -4,18 +4,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/chorus/scheduler/executor/sim"
 	"github.com/chorus/scheduler/job"
-	"github.com/chorus/scheduler/worker"
 )
 
 func newTestScheduler(capacityPerWorker int) *Scheduler {
 	return New(Config{
 		CapacityPerWorker: capacityPerWorker,
 		TickInterval:      time.Second,
-		Executors: map[string]worker.Executor{
-			"": sim.NewExecutor(),
-		},
 	})
 }
 
@@ -113,9 +108,6 @@ func TestScheduler_EndToEnd(t *testing.T) {
 	sched := New(Config{
 		CapacityPerWorker: 10,
 		TickInterval:      100 * time.Millisecond,
-		Executors: map[string]worker.Executor{
-			"": sim.NewExecutor(),
-		},
 	})
 
 	// Submit 5 jobs with varying costs and durations.
@@ -169,9 +161,6 @@ func TestScheduler_CompletionFreesCapacityForPending(t *testing.T) {
 	sched := New(Config{
 		CapacityPerWorker: 5,
 		TickInterval:      100 * time.Millisecond,
-		Executors: map[string]worker.Executor{
-			"": sim.NewExecutor(),
-		},
 	})
 
 	// Fill all capacity: 4 jobs * cost 5 = 20

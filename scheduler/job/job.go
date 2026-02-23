@@ -1,6 +1,10 @@
 package job
 
-import "time"
+import (
+	"time"
+
+	pb "github.com/chorus/proto"
+)
 
 // JobStatus represents the lifecycle state of a job.
 type JobStatus int
@@ -37,6 +41,6 @@ type Job struct {
 	WorkerID  string    // ID of the assigned worker (empty if not running)
 	CreatedAt time.Time
 	StartedAt time.Time  // When the job transitioned to Running
-	OutputCh  chan string // output channel where a job will send chunked strings
-	Type      string     // type of the job
+	OutputCh  chan string   // output channel where a job will send chunked strings
+	JobType   *pb.JobType // type of the job and its inputs
 }

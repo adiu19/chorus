@@ -3,6 +3,8 @@ package worker
 import (
 	"fmt"
 
+	"github.com/chorus/scheduler/executor/llm"
+	"github.com/chorus/scheduler/executor/sim"
 	"github.com/chorus/scheduler/job"
 )
 
@@ -30,7 +32,11 @@ func (w *Worker) RegisterExecutor(jobType string, exec Executor) {
 
 // Execute runs a given job and also passes the completions channel so that the scheduler can be made aware once a job is done.
 func (w *Worker) Execute(j *job.Job, completions chan string) {
-	executor, ok := w.Executors[j.Type]
+	key := "sim"
+	if j.JobType != nil && j.JobType.GetPromptContinuation() != nil {
+		key = "prompt_continuation"
+	}
+	executor, ok := w.Executors[key]
 	if !ok {
 		if j.OutputCh != nil {
 			close(j.OutputCh)
@@ -63,16 +69,17 @@ type WorkerPool struct {
 }
 
 // NewWorkerPool creates a pool with NumWorkers workers, each with the given capacity.
-func NewWorkerPool(capacityPerWorker int, executors map[string]Executor) *WorkerPool {
+func NewWorkerPool(capacityPerWorker int) *WorkerPool {
 	workers := make([]*Worker, NumWorkers)
 	for i := range workers {
 		w := &Worker{
 			ID:       fmt.Sprintf("worker-%d", i),
 			Capacity: capacityPerWorker,
 		}
-		for jobType, exec := range executors {
-			w.RegisterExecutor(jobType, exec)
-		}
+		w.RegisterExecutor("sim", sim.NewExecutor())
+		w.RegisterExecutor("prompt_continuation", llm.NewLLMExecutor(
+			llm.NewClient("http://localhost:11434"), "llama3.2",
+		))
 		workers[i] = w
 	}
 	return &WorkerPool{Workers: workers}

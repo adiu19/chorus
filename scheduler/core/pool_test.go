@@ -4,14 +4,11 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/chorus/scheduler/executor/sim"
 	"github.com/chorus/scheduler/worker"
 )
 
 func newTestPool(capacityPerWorker int) *worker.WorkerPool {
-	return worker.NewWorkerPool(capacityPerWorker, map[string]worker.Executor{
-		"": sim.NewExecutor(),
-	})
+	return worker.NewWorkerPool(capacityPerWorker)
 }
 
 func TestWorkerPool_AdmitAndRelease(t *testing.T) {

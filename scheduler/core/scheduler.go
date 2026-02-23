@@ -16,7 +16,6 @@ type Config struct {
 	CapacityPerWorker int
 	TickInterval      time.Duration
 	MaxPendingJobs    int // 0 means unlimited
-	Executors         map[string]worker.Executor
 }
 
 // Scheduler is the central coordinator that matches pending jobs to workers.
@@ -43,7 +42,7 @@ func New(cfg Config) *Scheduler {
 		config:      cfg,
 		pending:     pq,
 		running:     make(map[string]*job.Job),
-		pool:        worker.NewWorkerPool(cfg.CapacityPerWorker, cfg.Executors),
+		pool:        worker.NewWorkerPool(cfg.CapacityPerWorker),
 		completions: make(chan string, 64),
 	}
 }

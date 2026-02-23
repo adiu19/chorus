@@ -17,6 +17,6 @@ func NewLLMExecutor(client *Client, model string) *Executor {
 func (e *Executor) Execute(j *job.Job, onToken func(string)) error {
 	return e.client.ChatStream(&ChatRequest{
 		Model:    e.model,
-		Messages: []Message{{Role: "user", Content: "Hello"}},
+		Messages: []Message{{Role: "user", Content: j.JobType.GetPromptContinuation().GetPrompt()}},
 	}, onToken)
 }

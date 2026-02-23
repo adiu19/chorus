@@ -13,9 +13,7 @@ import (
 	pb "github.com/chorus/proto"
 	"github.com/chorus/ring"
 	"github.com/chorus/scheduler/core"
-	"github.com/chorus/scheduler/executor/sim"
 	"github.com/chorus/scheduler/job"
-	"github.com/chorus/scheduler/worker"
 	"github.com/chorus/wal"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -85,9 +83,6 @@ func NewNode(id, port string, seeds []string) *Node {
 		CapacityPerWorker: 10,
 		TickInterval:      500 * time.Millisecond,
 		MaxPendingJobs:    100,
-		Executors: map[string]worker.Executor{
-			"": sim.NewExecutor(),
-		},
 	})
 	node.scheduler.Start()
 
@@ -435,6 +430,7 @@ func (n *Node) SubmitJob(ctx context.Context, req *pb.SubmitJobRequest) (*pb.Sub
 		Priority: int(req.Priority),
 		Cost:     int(req.Cost),
 		OutputCh: make(chan string),
+		JobType:  req.JobType,
 	}
 
 	if err := n.scheduler.Submit(job); err != nil {
@@ -466,6 +462,7 @@ func (n *Node) RunJob(req *pb.RunJobRequest, stream grpc.ServerStreamingServer[p
 		Priority: int(req.Priority),
 		Cost:     int(req.Cost),
 		OutputCh: make(chan string),
+		JobType:  req.JobType,
 	}
 
 	if err := n.scheduler.Submit(job); err != nil {
