@@ -6,3 +6,8 @@ docs/ROADMAP.md
 
 # WAL data (local state)
 data/
+
+# for now
+*.md
+
+docs/*
