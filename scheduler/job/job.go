@@ -14,6 +14,7 @@ const (
 	Running                    // Assigned to a worker and executing
 	Completed                  // Finished execution successfully
 	Rejected                   // Denied admission (e.g. backpressure)
+	Failed    = 4              // Failed execution
 )
 
 func (s JobStatus) String() string {
@@ -26,6 +27,8 @@ func (s JobStatus) String() string {
 		return "completed"
 	case Rejected:
 		return "rejected"
+	case Failed:
+		return "failed"
 	default:
 		return "unknown"
 	}
@@ -38,9 +41,10 @@ type Job struct {
 	Cost      int           // Capacity units this job consumes on a worker
 	Duration  time.Duration // Simulated execution time
 	Status    JobStatus
-	WorkerID  string    // ID of the assigned worker (empty if not running)
+	WorkerID  string // ID of the assigned worker (empty if not running)
 	CreatedAt time.Time
-	StartedAt time.Time  // When the job transitioned to Running
-	OutputCh  chan string   // output channel where a job will send chunked strings
+	StartedAt time.Time   // When the job transitioned to Running
+	OutputCh  chan string // output channel where a job will send chunked strings
 	JobType   *pb.JobType // type of the job and its inputs
+	Err       error       // error in the job execution, if any
 }

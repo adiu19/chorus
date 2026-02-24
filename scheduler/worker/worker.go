@@ -16,9 +16,9 @@ type Executor interface {
 // Worker represents a goroutine-backed executor with a fixed capacity budget.
 type Worker struct {
 	ID        string
-	Capacity  int                // Total capacity units this worker can handle
-	Used      int                // Currently consumed capacity units
-	Jobs      []string           // IDs of jobs currently assigned to this worker
+	Capacity  int                 // Total capacity units this worker can handle
+	Used      int                 // Currently consumed capacity units
+	Jobs      []string            // IDs of jobs currently assigned to this worker
 	Executors map[string]Executor // executor registry
 }
 
@@ -53,11 +53,15 @@ func (w *Worker) Execute(j *job.Job, completions chan string) {
 			completions <- j.ID
 		}()
 
-		executor.Execute(j, func(token string) {
+		err := executor.Execute(j, func(token string) {
 			if j.OutputCh != nil {
 				j.OutputCh <- token
 			}
 		})
+
+		if err != nil {
+			j.Err = err
+		}
 	}()
 }
 

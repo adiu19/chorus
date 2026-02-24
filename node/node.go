@@ -482,10 +482,17 @@ func (n *Node) RunJob(req *pb.RunJobRequest, stream grpc.ServerStreamingServer[p
 		})
 	}
 
-	stream.Send(&pb.RunJobResponse{
-		JobId: req.Id,
-		Event: &pb.RunJobResponse_Completed{Completed: &pb.JobCompleted{}},
-	})
+	if job.Err == nil {
+		stream.Send(&pb.RunJobResponse{
+			JobId: req.Id,
+			Event: &pb.RunJobResponse_Completed{Completed: &pb.JobCompleted{}},
+		})
+	} else {
+		stream.Send(&pb.RunJobResponse{
+			JobId: req.Id,
+			Event: &pb.RunJobResponse_Failed{Failed: &pb.JobFailed{}},
+		})
+	}
 
 	return nil
 }

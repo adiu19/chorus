@@ -29,7 +29,7 @@ type Scheduler struct {
 	pool        *worker.WorkerPool
 	completions chan string   // worker goroutines send job IDs here when done
 	stop        chan struct{} // signals the tick loop to shut down
-	allJobs     sync.Map     // job ID -> *Job; lock-free registry for read-heavy status queries
+	allJobs     sync.Map      // job ID -> *Job; lock-free registry for read-heavy status queries
 }
 
 // New creates a Scheduler with the given config.
@@ -144,7 +144,11 @@ func (s *Scheduler) drain() {
 	for i := 0; i < n; i++ {
 		id := <-s.completions
 		if j, ok := s.running[id]; ok {
-			j.Status = job.Completed
+			if j.Err != nil {
+				j.Status = job.Failed
+			} else {
+				j.Status = job.Completed
+			}
 		}
 	}
 }
