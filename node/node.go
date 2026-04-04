@@ -82,7 +82,7 @@ func NewNode(id, port string, seeds []string) *Node {
 	node.scheduler = core.New(core.Config{
 		CapacityPerWorker: 10,
 		TickInterval:      500 * time.Millisecond,
-		MaxPendingJobs:    100,
+		MaxPendingJobs:    1000,
 	})
 	node.scheduler.Start()
 

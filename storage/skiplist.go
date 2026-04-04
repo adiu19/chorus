@@ -1,0 +1,140 @@
+package storage
+
+import (
+	"bytes"
+	"errors"
+	"math/rand"
+)
+
+// MaxLevels in our skip list
+const MaxLevels = 20
+
+// Node defines a single entry in our list
+type Node struct {
+	Key     []byte
+	Value   []byte
+	Forward []*Node
+}
+
+// SkipList encapsulates a skip list
+type SkipList struct {
+	Head *Node
+}
+
+// NewSkipList inits a new skip lsit
+func NewSkipList() *SkipList {
+	head := &Node{
+		Forward: make([]*Node, MaxLevels),
+	}
+	return &SkipList{
+		Head: head,
+	}
+}
+
+// Insert adds a new item into our skiplist
+func (sl *SkipList) Insert(key []byte, value []byte) error {
+	var predecessors [MaxLevels]*Node
+
+	currNode := sl.Head
+	currLevelID := MaxLevels - 1
+	for currLevelID >= 0 {
+		for currNode.Forward[currLevelID] != nil {
+			cmp := bytes.Compare(currNode.Forward[currLevelID].Key, key)
+			if cmp < 0 {
+				currNode = currNode.Forward[currLevelID]
+			} else if cmp == 0 {
+				return errors.New("key exists")
+			} else {
+				break
+			}
+		}
+		predecessors[currLevelID] = currNode
+		currLevelID--
+	}
+
+	numLevels := 1 // by default, the node will always be at level = 0
+	for level := 1; level < MaxLevels; level++ {
+		if rand.Float64() <= 0.5 {
+			numLevels++
+		} else {
+			// the node is not going to be on any more levels
+			break
+		}
+	}
+
+	newNode := &Node{
+		Key:     key,
+		Value:   value,
+		Forward: make([]*Node, numLevels),
+	}
+
+	// insert node at level 0
+	newNode.insertAfterPredecessor(predecessors[0], 0)
+	for level := 1; level < numLevels; level++ {
+		newNode.insertAfterPredecessor(predecessors[level], level)
+	}
+
+	return nil
+
+}
+
+func (n *Node) insertAfterPredecessor(pred *Node, level int) {
+	next := pred.Forward[level]
+	n.Forward[level] = next
+	pred.Forward[level] = n
+}
+
+// Get looks up a key and returns its value
+func (sl *SkipList) Get(key []byte) ([]byte, error) {
+	currNode := sl.Head
+	for level := MaxLevels - 1; level >= 0; level-- {
+		for currNode.Forward[level] != nil {
+			cmp := bytes.Compare(currNode.Forward[level].Key, key)
+			if cmp < 0 {
+				currNode = currNode.Forward[level]
+			} else if cmp == 0 {
+				return currNode.Forward[level].Value, nil
+			} else {
+				break
+			}
+		}
+	}
+	return nil, errors.New("key not found")
+}
+
+// Delete removes a key from the skiplist
+func (sl *SkipList) Delete(key []byte) error {
+	var predecessors [MaxLevels]*Node
+
+	currNode := sl.Head
+	found := false
+	for level := MaxLevels - 1; level >= 0; level-- {
+		for currNode.Forward[level] != nil {
+			cmp := bytes.Compare(currNode.Forward[level].Key, key)
+			if cmp < 0 {
+				currNode = currNode.Forward[level]
+			} else if cmp == 0 {
+				found = true
+				predecessors[level] = currNode
+				break
+			} else {
+				break
+			}
+		}
+	}
+
+	if !found {
+		return errors.New("key not found")
+	}
+
+	// Unlink the node at each level it appears on
+	for level := 0; level < MaxLevels; level++ {
+		if predecessors[level] == nil {
+			continue
+		}
+		target := predecessors[level].Forward[level]
+		predecessors[level].Forward[level] = target.Forward[level]
+	}
+
+	return nil
+}
