@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sync"
 	"sync/atomic"
 )
 
@@ -17,13 +18,15 @@ type LSM struct {
 	manifest *LSMManifest
 
 	immutableMemTable atomic.Pointer[SkipList] // a skiplist is marked as immutable when it no longer wants to accept writes and wants to be "flushed"
+	mu                sync.Mutex
 }
 
 // LSMManifest captures the metadata required to load the data references
 type LSMManifest struct {
-	rootPath         string
-	orderedTableRefs []SSTable
-	nextSeq          int64
+	rootPath            string
+	orderedTableRefs    []SSTable
+	nextSeq             int64
+	maxBytesBeforeFlush int
 }
 
 // SSTable represents a sorted collection of KVs on disc
@@ -47,9 +50,10 @@ type KVEntry struct {
 func NewLSM(rootPath string) *LSM {
 	res := &LSM{
 		manifest: &LSMManifest{
-			rootPath:         rootPath,
-			orderedTableRefs: []SSTable{},
-			nextSeq:          1,
+			rootPath:            rootPath,
+			orderedTableRefs:    []SSTable{},
+			nextSeq:             1,
+			maxBytesBeforeFlush: 100 * 1024 * 1024,
 		},
 	}
 	res.memTable.Store(NewSkipList())
@@ -248,10 +252,27 @@ func (lsm *LSM) Flush() error {
 
 // Insert adds a new KV into the LSM
 func (lsm *LSM) Insert(key []byte, value []byte) error {
+	defer lsm.checkAndTriggerAutoFlush()
 	return lsm.memTable.Load().Insert(key, value)
 }
 
 // Delete marks a key for deletion
 func (lsm *LSM) Delete(key []byte) error {
+	defer lsm.checkAndTriggerAutoFlush()
 	return lsm.memTable.Load().InsertWithTombstone(key)
+}
+
+// checkAndTriggerAutoFlush spawns a separate goroutine that triggers auto flush if size permits. a lock is used to prevent concurrent writes to trigger empty sstables on flush
+func (lsm *LSM) checkAndTriggerAutoFlush() {
+	if lsm.memTable.Load().SizeInBytes >= lsm.manifest.maxBytesBeforeFlush {
+		go func() {
+			if lsm.mu.TryLock() {
+				err := lsm.Flush()
+				if err != nil {
+					fmt.Println("flush failed...", err)
+				}
+				lsm.mu.Unlock()
+			}
+		}()
+	}
 }

@@ -20,8 +20,9 @@ type Node struct {
 
 // SkipList encapsulates a skip list
 type SkipList struct {
-	Head *Node
-	mu   sync.RWMutex
+	Head        *Node
+	mu          sync.RWMutex
+	SizeInBytes int
 }
 
 // NewSkipList inits a new skip lsit
@@ -48,7 +49,7 @@ func (sl *SkipList) insert(key []byte, value []byte, tombstone byte) error {
 	sl.mu.Lock()
 	defer sl.mu.Unlock()
 	var predecessors [MaxLevels]*Node
-
+	sl.SizeInBytes = sl.SizeInBytes + 1 + len(key) + len(value)
 	currNode := sl.Head
 	currLevelID := MaxLevels - 1
 	for currLevelID >= 0 {
@@ -57,9 +58,11 @@ func (sl *SkipList) insert(key []byte, value []byte, tombstone byte) error {
 			if cmp < 0 {
 				currNode = currNode.Forward[currLevelID]
 			} else if cmp == 0 {
+				sl.SizeInBytes = sl.SizeInBytes - len(currNode.Forward[currLevelID].Value) - len(key) - 1
 				// Overwrite existing key
 				currNode.Forward[currLevelID].Value = value
 				currNode.Forward[currLevelID].Tombstone = tombstone
+
 				return nil
 			} else {
 				break
