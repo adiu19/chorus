@@ -35,6 +35,7 @@ type SSTable struct {
 	MinKey      []byte // for later read optimizations
 	MaxKey      []byte // for later read optimizations
 	CreationSeq int64  // used for sorting references
+	SizeInBytes int
 }
 
 // KVEntry represents one KV in our SSTable
@@ -47,17 +48,55 @@ type KVEntry struct {
 }
 
 // NewLSM inits a new LSM
-func NewLSM(rootPath string) *LSM {
+func NewLSM(rootPath string) (*LSM, error) {
+	nextSeq, err := loadOrInitManifest(rootPath)
+	if err != nil {
+		return nil, fmt.Errorf("lsm init: %w", err)
+	}
+
 	res := &LSM{
 		manifest: &LSMManifest{
 			rootPath:            rootPath,
 			orderedTableRefs:    []SSTable{},
-			nextSeq:             1,
-			maxBytesBeforeFlush: 100 * 1024 * 1024,
+			nextSeq:             nextSeq,
+			maxBytesBeforeFlush: 100 * 1024 * 1024, //100MB
 		},
 	}
 	res.memTable.Store(NewSkipList())
-	return res
+	return res, nil
+}
+
+const manifestFile = "manifest.mf"
+
+// loadOrInitManifest reads the manifest file from rootPath.
+// If it exists, parses and returns nextSeq.
+// If it doesn't exist, creates it with nextSeq=1 and returns 1.
+func loadOrInitManifest(rootPath string) (int64, error) {
+	path := filepath.Join(rootPath, manifestFile)
+
+	data, err := os.ReadFile(path)
+	if err == nil {
+		// File exists — parse nextSeq
+		var seq int64
+		_, parseErr := fmt.Sscanf(string(data), "nextSeq=%d", &seq)
+		if parseErr != nil {
+			return 0, fmt.Errorf("parse manifest: %w", parseErr)
+		}
+		return seq, nil
+	}
+
+	if !os.IsNotExist(err) {
+		return 0, fmt.Errorf("read manifest: %w", err)
+	}
+
+	// File doesn't exist — create new store
+	if err := os.MkdirAll(rootPath, 0755); err != nil {
+		return 0, fmt.Errorf("create root path: %w", err)
+	}
+	if err := os.WriteFile(path, []byte("nextSeq=1"), 0644); err != nil {
+		return 0, fmt.Errorf("write manifest: %w", err)
+	}
+	return 1, nil
 }
 
 // Get fetches a key from the LSM
@@ -187,9 +226,11 @@ func (lsm *LSM) Flush() error {
 	// Walk level 0 of the skiplist (sorted order), write each entry
 	var minKey, maxKey []byte
 	node := old.Head.Forward[0]
+	sizeInBytes := 0
 	for node != nil {
 		// Tombstone: 1 byte
 		var tomb byte = node.Tombstone
+		sizeInBytes++
 		if err := w.WriteByte(tomb); err != nil {
 			return fmt.Errorf("flush: write tombstone: %w", err)
 		}
@@ -199,10 +240,14 @@ func (lsm *LSM) Flush() error {
 			return fmt.Errorf("flush: write key len: %w", err)
 		}
 
+		sizeInBytes++
+
 		// Key
 		if _, err := w.Write(node.Key); err != nil {
 			return fmt.Errorf("flush: write key: %w", err)
 		}
+
+		sizeInBytes += len(node.Key)
 
 		// Value length: 2 bytes (uint16, big-endian)
 		valLenBuf := make([]byte, 2)
@@ -210,6 +255,8 @@ func (lsm *LSM) Flush() error {
 		if _, err := w.Write(valLenBuf); err != nil {
 			return fmt.Errorf("flush: write val len: %w", err)
 		}
+
+		sizeInBytes += 2 + len(node.Value)
 
 		// Value
 		if _, err := w.Write(node.Value); err != nil {
@@ -241,8 +288,15 @@ func (lsm *LSM) Flush() error {
 		MinKey:      minKey,
 		MaxKey:      maxKey,
 		CreationSeq: seq,
+		SizeInBytes: sizeInBytes,
 	}
 	lsm.manifest.orderedTableRefs = append([]SSTable{sstable}, lsm.manifest.orderedTableRefs...)
+
+	// Persist updated nextSeq to manifest file
+	manifestPath := filepath.Join(lsm.manifest.rootPath, manifestFile)
+	if err := os.WriteFile(manifestPath, []byte(fmt.Sprintf("nextSeq=%d", lsm.manifest.nextSeq)), 0644); err != nil {
+		return fmt.Errorf("flush: update manifest: %w", err)
+	}
 
 	// Clear immutable memtable
 	lsm.immutableMemTable.Store(nil)

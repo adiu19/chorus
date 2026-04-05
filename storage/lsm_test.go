@@ -13,7 +13,11 @@ func setupLSM(t *testing.T) *LSM {
 		t.Fatalf("failed to create temp dir: %v", err)
 	}
 	t.Cleanup(func() { os.RemoveAll(dir) })
-	return NewLSM(dir)
+	lsm, err := NewLSM(dir)
+	if err != nil {
+		t.Fatalf("failed to create LSM: %v", err)
+	}
+	return lsm
 }
 
 func TestLSMInsertAndGetFromMemtable(t *testing.T) {
