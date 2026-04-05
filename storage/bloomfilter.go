@@ -1,8 +1,11 @@
 package storage
 
 import (
+	"fmt"
 	"hash"
 	"hash/fnv"
+	"io"
+	"os"
 )
 
 const bloomFilterSize = 8 * 1024            // 8KB bitmap
@@ -22,6 +25,31 @@ func NewBloomFilter() *BloomFilter {
 		Modulo:   bloomFilterBits,
 		HashFunc: fnv.New64a(),
 	}
+}
+
+// NewBloomFilterWithBitMap inits a new bloom filter from an existing bitmap
+func NewBloomFilterWithBitMap(bitMap []byte) *BloomFilter {
+	return &BloomFilter{
+		BitMap:   bitMap,
+		Modulo:   bloomFilterBits,
+		HashFunc: fnv.New64a(),
+	}
+}
+
+// LoadBloomFilterFromSSTable reads the first 8KB of an SSTable file and returns a BloomFilter
+func LoadBloomFilterFromSSTable(path string) (*BloomFilter, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("load bloom filter: open: %w", err)
+	}
+	defer f.Close()
+
+	bitMap := make([]byte, bloomFilterSize)
+	if _, err := io.ReadFull(f, bitMap); err != nil {
+		return nil, fmt.Errorf("load bloom filter: read: %w", err)
+	}
+
+	return NewBloomFilterWithBitMap(bitMap), nil
 }
 
 func (bf *BloomFilter) hash(key []byte) (uint32, uint32) {

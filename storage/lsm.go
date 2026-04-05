@@ -37,6 +37,7 @@ type SSTable struct {
 	MaxKey      []byte // for later read optimizations
 	CreationSeq int64  // used for sorting references
 	SizeInBytes int
+	BF          *BloomFilter
 }
 
 // KVEntry represents one KV in our SSTable
@@ -87,6 +88,11 @@ func loadOrInitManifest(rootPath string) (int64, []SSTable, error) {
 			if parseErr != nil {
 				return 0, nil, fmt.Errorf("parse manifest sstable: %w", parseErr)
 			}
+			bf, bfErr := LoadBloomFilterFromSSTable(filepath.Join(rootPath, sst.PathRef))
+			if bfErr != nil {
+				return 0, nil, fmt.Errorf("load bloom filter: %w", bfErr)
+			}
+			sst.BF = bf
 			tables = append(tables, sst)
 		}
 
@@ -182,6 +188,10 @@ func (lsm *LSM) Get(key []byte) ([]byte, error) {
 func (lsm *LSM) scanSSTablesForKey(key []byte) ([]byte, error) {
 	tables := lsm.manifest.orderedTableRefs
 	for _, table := range tables {
+		if !table.BF.Exists(key) {
+			// if our bloom filter says the key doesn't exist, we trust and move onto the next one.
+			continue
+		}
 		cmpWithMin := bytes.Compare(key, table.MinKey)
 		cmpWithMax := bytes.Compare(key, table.MaxKey)
 		if cmpWithMin >= 0 && cmpWithMax <= 0 {
@@ -209,7 +219,13 @@ func (lsm *LSM) readFromSSTable(key []byte, path string) ([]byte, bool, error) {
 
 	r := bufio.NewReader(f)
 
+	// read bloom filter one time, skip since we don't need this data really; our BF is already front-loaded into LSM manifest for in-memory read
+	bf := make([]byte, 8 * 1024)
+	if _, err := io.ReadFull(r, bf); err != nil {
+		return nil, false, fmt.Errorf("read sstable: read bloom filter: %w", err)
+	}
 	for {
+		
 		// Tombstone: 1 byte
 		tomb, err := r.ReadByte()
 		if err != nil {
@@ -278,7 +294,13 @@ func (lsm *LSM) Flush() error {
 
 	w := bufio.NewWriter(f)
 
-	// Walk level 0 of the skiplist (sorted order), write each entry
+	// Pass 1: build bloom filter from skiplist keys, write it as the first 8KB
+	bf := old.BuildBloomFilter()
+	if _, err := w.Write(bf.BitMap); err != nil {
+		return fmt.Errorf("flush: write bloom filter: %w", err)
+	}
+
+	// Pass 2: walk level 0 of the skiplist (sorted order), write each entry
 	var minKey, maxKey []byte
 	node := old.Head.Forward[0]
 	sizeInBytes := 0
@@ -302,6 +324,7 @@ func (lsm *LSM) Flush() error {
 			return fmt.Errorf("flush: write key: %w", err)
 		}
 
+		
 		sizeInBytes += len(node.Key)
 
 		// Value length: 2 bytes (uint16, big-endian)
@@ -344,6 +367,7 @@ func (lsm *LSM) Flush() error {
 		MaxKey:      maxKey,
 		CreationSeq: seq,
 		SizeInBytes: sizeInBytes,
+		BF:          bf,
 	}
 	lsm.manifest.orderedTableRefs = append([]SSTable{sstable}, lsm.manifest.orderedTableRefs...)
 

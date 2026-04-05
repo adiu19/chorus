@@ -129,6 +129,20 @@ func (sl *SkipList) Get(key []byte) []byte {
 }
 
 // Delete removes a key from the skiplist
+// BuildBloomFilter walks level 0 and captures every key (including tombstones) into a bloom filter
+func (sl *SkipList) BuildBloomFilter() *BloomFilter {
+	sl.mu.RLock()
+	defer sl.mu.RUnlock()
+
+	bf := NewBloomFilter()
+	node := sl.Head.Forward[0]
+	for node != nil {
+		bf.Capture(node.Key)
+		node = node.Forward[0]
+	}
+	return bf
+}
+
 func (sl *SkipList) Delete(key []byte) error {
 	sl.mu.Lock()
 	defer sl.mu.Unlock()
