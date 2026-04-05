@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"math/rand"
+	"sync"
 )
 
 // MaxLevels in our skip list
@@ -19,6 +20,7 @@ type Node struct {
 // SkipList encapsulates a skip list
 type SkipList struct {
 	Head *Node
+	mu   sync.RWMutex
 }
 
 // NewSkipList inits a new skip lsit
@@ -33,6 +35,8 @@ func NewSkipList() *SkipList {
 
 // Insert adds a new item into our skiplist
 func (sl *SkipList) Insert(key []byte, value []byte) error {
+	sl.mu.Lock()
+	defer sl.mu.Unlock()
 	var predecessors [MaxLevels]*Node
 
 	currNode := sl.Head
@@ -86,6 +90,8 @@ func (n *Node) insertAfterPredecessor(pred *Node, level int) {
 
 // Get looks up a key and returns its value
 func (sl *SkipList) Get(key []byte) ([]byte, error) {
+	sl.mu.RLock()
+	defer sl.mu.RUnlock()
 	currNode := sl.Head
 	for level := MaxLevels - 1; level >= 0; level-- {
 		for currNode.Forward[level] != nil {
@@ -104,6 +110,8 @@ func (sl *SkipList) Get(key []byte) ([]byte, error) {
 
 // Delete removes a key from the skiplist
 func (sl *SkipList) Delete(key []byte) error {
+	sl.mu.Lock()
+	defer sl.mu.Unlock()
 	var predecessors [MaxLevels]*Node
 
 	currNode := sl.Head
