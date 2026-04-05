@@ -21,9 +21,9 @@ type LSM struct {
 
 // LSMManifest captures the metadata required to load the data references
 type LSMManifest struct {
-	RootPath         string
-	OrderedTableRefs []SSTable
-	NextSeq          int64
+	rootPath         string
+	orderedTableRefs []SSTable
+	nextSeq          int64
 }
 
 // SSTable represents a sorted collection of KVs on disc
@@ -41,6 +41,19 @@ type KVEntry struct {
 	Key       []byte
 	ValSize   uint16 // byte array transformed into uint16. on disk load
 	Val       []byte
+}
+
+// NewLSM inits a new LSM
+func NewLSM(rootPath string) *LSM {
+	res := &LSM{
+		manifest: &LSMManifest{
+			rootPath:         rootPath,
+			orderedTableRefs: []SSTable{},
+			nextSeq:          1,
+		},
+	}
+	res.memTable.Store(NewSkipList())
+	return res
 }
 
 // Get fetches a key from the LSM
@@ -69,7 +82,7 @@ func (lsm *LSM) Get(key []byte) ([]byte, error) {
 
 // assumes that SSTable references in LSM are sorted with latest first
 func (lsm *LSM) scanSSTablesForKey(key []byte) ([]byte, error) {
-	tables := lsm.manifest.OrderedTableRefs
+	tables := lsm.manifest.orderedTableRefs
 	for _, table := range tables {
 		cmpWithMin := bytes.Compare(key, table.MinKey)
 		cmpWithMax := bytes.Compare(key, table.MaxKey)
@@ -153,10 +166,10 @@ func (lsm *LSM) Flush() error {
 	lsm.memTable.Store(NewSkipList())
 
 	// Build file path
-	seq := lsm.manifest.NextSeq
-	lsm.manifest.NextSeq++
+	seq := lsm.manifest.nextSeq
+	lsm.manifest.nextSeq++
 	filename := fmt.Sprintf("sstable_%06d.dat", seq)
-	path := filepath.Join(lsm.manifest.RootPath, filename)
+	path := filepath.Join(lsm.manifest.rootPath, filename)
 
 	// Create file
 	f, err := os.Create(path)
@@ -172,7 +185,7 @@ func (lsm *LSM) Flush() error {
 	node := old.Head.Forward[0]
 	for node != nil {
 		// Tombstone: 1 byte
-		var tomb byte = 0
+		var tomb byte = node.Tombstone
 		if err := w.WriteByte(tomb); err != nil {
 			return fmt.Errorf("flush: write tombstone: %w", err)
 		}
@@ -225,10 +238,20 @@ func (lsm *LSM) Flush() error {
 		MaxKey:      maxKey,
 		CreationSeq: seq,
 	}
-	lsm.manifest.OrderedTableRefs = append([]SSTable{sstable}, lsm.manifest.OrderedTableRefs...)
+	lsm.manifest.orderedTableRefs = append([]SSTable{sstable}, lsm.manifest.orderedTableRefs...)
 
 	// Clear immutable memtable
 	lsm.immutableMemTable.Store(nil)
 
 	return nil
+}
+
+// Insert adds a new KV into the LSM
+func (lsm *LSM) Insert(key []byte, value []byte) error {
+	return lsm.memTable.Load().Insert(key, value)
+}
+
+// Delete marks a key for deletion
+func (lsm *LSM) Delete(key []byte) error {
+	return lsm.memTable.Load().InsertWithTombstone(key)
 }

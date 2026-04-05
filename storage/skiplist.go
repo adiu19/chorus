@@ -12,9 +12,10 @@ const MaxLevels = 20
 
 // Node defines a single entry in our list
 type Node struct {
-	Key     []byte
-	Value   []byte
-	Forward []*Node
+	Key       []byte
+	Value     []byte
+	Forward   []*Node
+	Tombstone byte
 }
 
 // SkipList encapsulates a skip list
@@ -33,8 +34,17 @@ func NewSkipList() *SkipList {
 	}
 }
 
+// InsertWithTombstone adds a new item into our skiplist with the tombstone marker set
+func (sl *SkipList) InsertWithTombstone(key []byte) error {
+	return sl.insert(key, nil, 1)
+}
+
 // Insert adds a new item into our skiplist
 func (sl *SkipList) Insert(key []byte, value []byte) error {
+	return sl.insert(key, value, 0)
+}
+
+func (sl *SkipList) insert(key []byte, value []byte, tombstone byte) error {
 	sl.mu.Lock()
 	defer sl.mu.Unlock()
 	var predecessors [MaxLevels]*Node
@@ -47,7 +57,10 @@ func (sl *SkipList) Insert(key []byte, value []byte) error {
 			if cmp < 0 {
 				currNode = currNode.Forward[currLevelID]
 			} else if cmp == 0 {
-				return errors.New("key exists")
+				// Overwrite existing key
+				currNode.Forward[currLevelID].Value = value
+				currNode.Forward[currLevelID].Tombstone = tombstone
+				return nil
 			} else {
 				break
 			}
@@ -67,9 +80,10 @@ func (sl *SkipList) Insert(key []byte, value []byte) error {
 	}
 
 	newNode := &Node{
-		Key:     key,
-		Value:   value,
-		Forward: make([]*Node, numLevels),
+		Key:       key,
+		Value:     value,
+		Forward:   make([]*Node, numLevels),
+		Tombstone: tombstone,
 	}
 
 	// insert node at level 0
@@ -99,6 +113,9 @@ func (sl *SkipList) Get(key []byte) []byte {
 			if cmp < 0 {
 				currNode = currNode.Forward[level]
 			} else if cmp == 0 {
+				if currNode.Forward[level].Tombstone == 1 {
+					return nil
+				}
 				return currNode.Forward[level].Value
 			} else {
 				break

@@ -39,17 +39,15 @@ func TestGetMissing(t *testing.T) {
 	}
 }
 
-func TestInsertDuplicate(t *testing.T) {
+func TestInsertOverwrite(t *testing.T) {
 	sl := NewSkipList()
 
-	err := sl.Insert([]byte("apple"), []byte("red"))
-	if err != nil {
-		t.Fatalf("first insert should succeed: %v", err)
-	}
+	sl.Insert([]byte("apple"), []byte("red"))
+	sl.Insert([]byte("apple"), []byte("green"))
 
-	err = sl.Insert([]byte("apple"), []byte("green"))
-	if err == nil {
-		t.Fatal("expected error for duplicate key")
+	val := sl.Get([]byte("apple"))
+	if string(val) != "green" {
+		t.Fatalf("expected 'green' after overwrite, got '%s'", val)
 	}
 }
 
