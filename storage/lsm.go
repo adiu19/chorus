@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 )
@@ -29,7 +30,7 @@ type LSMManifest struct {
 	maxBytesBeforeFlush int
 }
 
-// SSTable represents a sorted collection of KVs on disc
+// SSTable represents a sorted collection of KVs on disk
 type SSTable struct {
 	PathRef     string
 	MinKey      []byte // for later read optimizations
@@ -49,7 +50,7 @@ type KVEntry struct {
 
 // NewLSM inits a new LSM
 func NewLSM(rootPath string) (*LSM, error) {
-	nextSeq, err := loadOrInitManifest(rootPath)
+	nextSeq, tables, err := loadOrInitManifest(rootPath)
 	if err != nil {
 		return nil, fmt.Errorf("lsm init: %w", err)
 	}
@@ -57,7 +58,7 @@ func NewLSM(rootPath string) (*LSM, error) {
 	res := &LSM{
 		manifest: &LSMManifest{
 			rootPath:            rootPath,
-			orderedTableRefs:    []SSTable{},
+			orderedTableRefs:    tables,
 			nextSeq:             nextSeq,
 			maxBytesBeforeFlush: 500 * 1024 * 1024, //500MB
 		},
@@ -69,34 +70,88 @@ func NewLSM(rootPath string) (*LSM, error) {
 const manifestFile = "manifest.mf"
 
 // loadOrInitManifest reads the manifest file from rootPath.
-// If it exists, parses and returns nextSeq.
-// If it doesn't exist, creates it with nextSeq=1 and returns 1.
-func loadOrInitManifest(rootPath string) (int64, error) {
+// If it exists, parses SSTable entries and derives nextSeq from the last entry.
+// If it doesn't exist, creates an empty manifest file.
+func loadOrInitManifest(rootPath string) (int64, []SSTable, error) {
 	path := filepath.Join(rootPath, manifestFile)
 
 	data, err := os.ReadFile(path)
 	if err == nil {
-		// File exists — parse nextSeq
-		var seq int64
-		_, parseErr := fmt.Sscanf(string(data), "nextSeq=%d", &seq)
-		if parseErr != nil {
-			return 0, fmt.Errorf("parse manifest: %w", parseErr)
+		lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+		var tables []SSTable
+		for _, line := range lines {
+			if line == "" {
+				continue
+			}
+			sst, parseErr := parseSSTableLine(line)
+			if parseErr != nil {
+				return 0, nil, fmt.Errorf("parse manifest sstable: %w", parseErr)
+			}
+			tables = append(tables, sst)
 		}
-		return seq, nil
+
+		// Derive nextSeq from the last (newest) entry
+		var nextSeq int64 = 1
+		if len(tables) > 0 {
+			nextSeq = tables[len(tables)-1].CreationSeq + 1
+		}
+
+		// Reverse so newest is first (last appended = newest)
+		for i, j := 0, len(tables)-1; i < j; i, j = i+1, j-1 {
+			tables[i], tables[j] = tables[j], tables[i]
+		}
+
+		return nextSeq, tables, nil
 	}
 
 	if !os.IsNotExist(err) {
-		return 0, fmt.Errorf("read manifest: %w", err)
+		return 0, nil, fmt.Errorf("read manifest: %w", err)
 	}
 
-	// File doesn't exist — create new store
 	if err := os.MkdirAll(rootPath, 0755); err != nil {
-		return 0, fmt.Errorf("create root path: %w", err)
+		return 0, nil, fmt.Errorf("create root path: %w", err)
 	}
-	if err := os.WriteFile(path, []byte("nextSeq=1"), 0644); err != nil {
-		return 0, fmt.Errorf("write manifest: %w", err)
+	if err := os.WriteFile(path, []byte(""), 0644); err != nil {
+		return 0, nil, fmt.Errorf("write manifest: %w", err)
 	}
-	return 1, nil
+	return 1, nil, nil
+}
+
+// parseSSTableLine parses a line like:
+// sstable_000001.dat,seq=1,size=4096,minKey=<base62>,maxKey=<base62>
+func parseSSTableLine(line string) (SSTable, error) {
+	parts := strings.Split(line, ",")
+	if len(parts) != 5 {
+		return SSTable{}, fmt.Errorf("expected 5 fields, got %d: %s", len(parts), line)
+	}
+
+	filename := parts[0]
+
+	var seq int64
+	if _, err := fmt.Sscanf(parts[1], "seq=%d", &seq); err != nil {
+		return SSTable{}, fmt.Errorf("parse seq: %w", err)
+	}
+
+	var size int
+	if _, err := fmt.Sscanf(parts[2], "size=%d", &size); err != nil {
+		return SSTable{}, fmt.Errorf("parse size: %w", err)
+	}
+
+	var minKeyB62, maxKeyB62 string
+	if _, err := fmt.Sscanf(parts[3], "minKey=%s", &minKeyB62); err != nil {
+		return SSTable{}, fmt.Errorf("parse minKey: %w", err)
+	}
+	if _, err := fmt.Sscanf(parts[4], "maxKey=%s", &maxKeyB62); err != nil {
+		return SSTable{}, fmt.Errorf("parse maxKey: %w", err)
+	}
+
+	return SSTable{
+		PathRef:     filename,
+		CreationSeq: seq,
+		SizeInBytes: size,
+		MinKey:      Base62Decode(minKeyB62),
+		MaxKey:      Base62Decode(maxKeyB62),
+	}, nil
 }
 
 // Get fetches a key from the LSM
@@ -201,7 +256,7 @@ func (lsm *LSM) readFromSSTable(key []byte, path string) ([]byte, bool, error) {
 	return nil, false, nil
 }
 
-// Flush persists the current memtable on disc
+// Flush persists the current memtable on disk
 func (lsm *LSM) Flush() error {
 	// Swap memtable: old becomes immutable, new accepts writes
 	old := lsm.memTable.Load()
@@ -282,7 +337,7 @@ func (lsm *LSM) Flush() error {
 		return fmt.Errorf("flush: fsync: %w", err)
 	}
 
-	// Update manifest: prepend (newest first)
+	// Update manifest in memory: prepend (newest first)
 	sstable := SSTable{
 		PathRef:     path,
 		MinKey:      minKey,
@@ -292,14 +347,42 @@ func (lsm *LSM) Flush() error {
 	}
 	lsm.manifest.orderedTableRefs = append([]SSTable{sstable}, lsm.manifest.orderedTableRefs...)
 
-	// Persist updated nextSeq to manifest file
-	manifestPath := filepath.Join(lsm.manifest.rootPath, manifestFile)
-	if err := os.WriteFile(manifestPath, []byte(fmt.Sprintf("nextSeq=%d", lsm.manifest.nextSeq)), 0644); err != nil {
+	// Append SSTable entry to manifest file and update nextSeq on first line
+	if err := lsm.persistManifest(sstable); err != nil {
 		return fmt.Errorf("flush: update manifest: %w", err)
 	}
 
 	// Clear immutable memtable
 	lsm.immutableMemTable.Store(nil)
+
+	return nil
+}
+
+// persistManifest appends one SSTable entry to the manifest file
+func (lsm *LSM) persistManifest(sst SSTable) error {
+	path := filepath.Join(lsm.manifest.rootPath, manifestFile)
+
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		return fmt.Errorf("open manifest: %w", err)
+	}
+	defer f.Close()
+
+	line := fmt.Sprintf("%s,seq=%d,size=%d,minKey=%s,maxKey=%s\n",
+		filepath.Base(sst.PathRef),
+		sst.CreationSeq,
+		sst.SizeInBytes,
+		Base62Encode(sst.MinKey),
+		Base62Encode(sst.MaxKey),
+	)
+
+	if _, err := f.WriteString(line); err != nil {
+		return fmt.Errorf("write manifest entry: %w", err)
+	}
+
+	if err := f.Sync(); err != nil {
+		return fmt.Errorf("fsync manifest: %w", err)
+	}
 
 	return nil
 }
