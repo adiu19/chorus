@@ -59,7 +59,7 @@ func NewLSM(rootPath string) (*LSM, error) {
 			rootPath:            rootPath,
 			orderedTableRefs:    []SSTable{},
 			nextSeq:             nextSeq,
-			maxBytesBeforeFlush: 100 * 1024 * 1024, //100MB
+			maxBytesBeforeFlush: 500 * 1024 * 1024, //500MB
 		},
 	}
 	res.memTable.Store(NewSkipList())
