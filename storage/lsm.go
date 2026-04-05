@@ -2,8 +2,10 @@ package storage
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/binary"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sync/atomic"
@@ -11,10 +13,10 @@ import (
 
 // LSM is a wrapper over our data store
 type LSM struct {
-	MemTable atomic.Pointer[SkipList]
-	Manifest *LSMManifest
+	memTable atomic.Pointer[SkipList]
+	manifest *LSMManifest
 
-	ImmutableMemTable atomic.Pointer[SkipList] // a skiplist is marked as immutable when it no longer wants to accept writes and wants to be "flushed"
+	immutableMemTable atomic.Pointer[SkipList] // a skiplist is marked as immutable when it no longer wants to accept writes and wants to be "flushed"
 }
 
 // LSMManifest captures the metadata required to load the data references
@@ -41,18 +43,120 @@ type KVEntry struct {
 	Val       []byte
 }
 
+// Get fetches a key from the LSM
+func (lsm *LSM) Get(key []byte) ([]byte, error) {
+	if val := lsm.memTable.Load().Get(key); val != nil {
+		return val, nil
+	}
+
+	if immutable := lsm.immutableMemTable.Load(); immutable != nil {
+		if val := immutable.Get(key); val != nil {
+			return val, nil
+		}
+	}
+
+	lvl3, err := lsm.scanSSTablesForKey(key)
+	if err != nil {
+		return nil, err
+	}
+
+	if lvl3 != nil {
+		return lvl3, nil
+	}
+
+	return nil, nil
+}
+
+// assumes that SSTable references in LSM are sorted with latest first
+func (lsm *LSM) scanSSTablesForKey(key []byte) ([]byte, error) {
+	tables := lsm.manifest.OrderedTableRefs
+	for _, table := range tables {
+		cmpWithMin := bytes.Compare(key, table.MinKey)
+		cmpWithMax := bytes.Compare(key, table.MaxKey)
+		if cmpWithMin >= 0 && cmpWithMax <= 0 {
+			val, found, err := lsm.readFromSSTable(key, table.PathRef)
+			if err != nil {
+				return nil, err
+			}
+			if found {
+				return val, nil // val is nil if tombstone
+			}
+		}
+	}
+
+	return nil, nil
+}
+
+// readFromSSTable scans an SSTable file for a key.
+// Returns (value, true, nil) if found, (nil, true, nil) if tombstoned, (nil, false, nil) if not present.
+func (lsm *LSM) readFromSSTable(key []byte, path string) ([]byte, bool, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, false, fmt.Errorf("read sstable: open: %w", err)
+	}
+	defer f.Close()
+
+	r := bufio.NewReader(f)
+
+	for {
+		// Tombstone: 1 byte
+		tomb, err := r.ReadByte()
+		if err != nil {
+			break // EOF or error — key not in this file
+		}
+
+		// Key length: 1 byte
+		keyLen, err := r.ReadByte()
+		if err != nil {
+			return nil, false, fmt.Errorf("read sstable: read key len: %w", err)
+		}
+
+		// Key
+		entryKey := make([]byte, keyLen)
+		if _, err := io.ReadFull(r, entryKey); err != nil {
+			return nil, false, fmt.Errorf("read sstable: read key: %w", err)
+		}
+
+		// Value length: 2 bytes (big-endian)
+		valLenBuf := make([]byte, 2)
+		if _, err := io.ReadFull(r, valLenBuf); err != nil {
+			return nil, false, fmt.Errorf("read sstable: read val len: %w", err)
+		}
+		valLen := binary.BigEndian.Uint16(valLenBuf)
+
+		// Check if this is the key we want
+		if bytes.Equal(entryKey, key) {
+			if tomb == 1 {
+				return nil, true, nil // tombstone — key was deleted
+			}
+			val := make([]byte, valLen)
+			if _, err := io.ReadFull(r, val); err != nil {
+				return nil, false, fmt.Errorf("read sstable: read value: %w", err)
+			}
+			return val, true, nil
+		}
+
+		// Not our key — skip past the value
+		if _, err := r.Discard(int(valLen)); err != nil {
+			return nil, false, fmt.Errorf("read sstable: skip value: %w", err)
+		}
+	}
+
+	return nil, false, nil
+}
+
 // Flush persists the current memtable on disc
 func (lsm *LSM) Flush() error {
 	// Swap memtable: old becomes immutable, new accepts writes
-	old := lsm.MemTable.Load()
-	lsm.ImmutableMemTable.Store(old)
-	lsm.MemTable.Store(NewSkipList())
+	old := lsm.memTable.Load()
+	lsm.immutableMemTable.Store(old)
+	lsm.memTable.Store(NewSkipList())
 
 	// Build file path
-	seq := lsm.Manifest.NextSeq
-	lsm.Manifest.NextSeq++
+	seq := lsm.manifest.NextSeq
+	lsm.manifest.NextSeq++
 	filename := fmt.Sprintf("sstable_%06d.dat", seq)
-	path := filepath.Join(lsm.Manifest.RootPath, filename)
+	path := filepath.Join(lsm.manifest.RootPath, filename)
 
 	// Create file
 	f, err := os.Create(path)
@@ -121,10 +225,10 @@ func (lsm *LSM) Flush() error {
 		MaxKey:      maxKey,
 		CreationSeq: seq,
 	}
-	lsm.Manifest.OrderedTableRefs = append([]SSTable{sstable}, lsm.Manifest.OrderedTableRefs...)
+	lsm.manifest.OrderedTableRefs = append([]SSTable{sstable}, lsm.manifest.OrderedTableRefs...)
 
 	// Clear immutable memtable
-	lsm.ImmutableMemTable.Store(nil)
+	lsm.immutableMemTable.Store(nil)
 
 	return nil
 }

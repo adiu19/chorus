@@ -12,26 +12,17 @@ func TestInsertAndGet(t *testing.T) {
 	sl.Insert([]byte("apple"), []byte("red"))
 	sl.Insert([]byte("cherry"), []byte("dark red"))
 
-	val, err := sl.Get([]byte("apple"))
-	if err != nil {
-		t.Fatalf("expected to find apple: %v", err)
-	}
+	val := sl.Get([]byte("apple"))
 	if string(val) != "red" {
 		t.Fatalf("expected 'red', got '%s'", val)
 	}
 
-	val, err = sl.Get([]byte("banana"))
-	if err != nil {
-		t.Fatalf("expected to find banana: %v", err)
-	}
+	val = sl.Get([]byte("banana"))
 	if string(val) != "yellow" {
 		t.Fatalf("expected 'yellow', got '%s'", val)
 	}
 
-	val, err = sl.Get([]byte("cherry"))
-	if err != nil {
-		t.Fatalf("expected to find cherry: %v", err)
-	}
+	val = sl.Get([]byte("cherry"))
 	if string(val) != "dark red" {
 		t.Fatalf("expected 'dark red', got '%s'", val)
 	}
@@ -42,9 +33,9 @@ func TestGetMissing(t *testing.T) {
 
 	sl.Insert([]byte("apple"), []byte("red"))
 
-	_, err := sl.Get([]byte("banana"))
-	if err == nil {
-		t.Fatal("expected error for missing key")
+	val := sl.Get([]byte("banana"))
+	if val != nil {
+		t.Fatal("expected nil for missing key")
 	}
 }
 
@@ -74,24 +65,18 @@ func TestDelete(t *testing.T) {
 		t.Fatalf("expected delete to succeed: %v", err)
 	}
 
-	_, err = sl.Get([]byte("banana"))
-	if err == nil {
+	val := sl.Get([]byte("banana"))
+	if val != nil {
 		t.Fatal("expected banana to be gone after delete")
 	}
 
 	// Other keys still accessible
-	val, err := sl.Get([]byte("apple"))
-	if err != nil {
-		t.Fatalf("apple should still exist: %v", err)
-	}
+	val = sl.Get([]byte("apple"))
 	if string(val) != "red" {
 		t.Fatalf("expected 'red', got '%s'", val)
 	}
 
-	val, err = sl.Get([]byte("cherry"))
-	if err != nil {
-		t.Fatalf("cherry should still exist: %v", err)
-	}
+	val = sl.Get([]byte("cherry"))
 	if string(val) != "dark red" {
 		t.Fatalf("expected 'dark red', got '%s'", val)
 	}
@@ -149,9 +134,9 @@ func TestManyInserts(t *testing.T) {
 	for i := 0; i < 1000; i++ {
 		key := fmt.Sprintf("key:%05d", i)
 		expected := fmt.Sprintf("val:%05d", i)
-		val, err := sl.Get([]byte(key))
-		if err != nil {
-			t.Fatalf("get %d failed: %v", i, err)
+		val := sl.Get([]byte(key))
+		if val == nil {
+			t.Fatalf("get %d returned nil", i)
 		}
 		if string(val) != expected {
 			t.Fatalf("key %d: expected '%s', got '%s'", i, expected, string(val))

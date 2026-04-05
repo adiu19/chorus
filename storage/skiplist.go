@@ -89,7 +89,7 @@ func (n *Node) insertAfterPredecessor(pred *Node, level int) {
 }
 
 // Get looks up a key and returns its value
-func (sl *SkipList) Get(key []byte) ([]byte, error) {
+func (sl *SkipList) Get(key []byte) []byte {
 	sl.mu.RLock()
 	defer sl.mu.RUnlock()
 	currNode := sl.Head
@@ -99,13 +99,13 @@ func (sl *SkipList) Get(key []byte) ([]byte, error) {
 			if cmp < 0 {
 				currNode = currNode.Forward[level]
 			} else if cmp == 0 {
-				return currNode.Forward[level].Value, nil
+				return currNode.Forward[level].Value
 			} else {
 				break
 			}
 		}
 	}
-	return nil, errors.New("key not found")
+	return nil
 }
 
 // Delete removes a key from the skiplist
