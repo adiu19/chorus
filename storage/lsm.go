@@ -16,6 +16,7 @@ import (
 type LSM struct {
 	memTable atomic.Pointer[SkipList]
 	manifest *LSMManifest
+	wal      *WAL
 
 	immutableMemTable atomic.Pointer[SkipList] // a skiplist is marked as immutable when it no longer wants to accept writes and wants to be "flushed"
 	mu                sync.Mutex
@@ -50,14 +51,19 @@ type KVEntry struct {
 
 // NewLSM inits a new LSM
 func NewLSM(rootPath string) (*LSM, error) {
-	nextSeq, tables, err := loadOrInitManifest(rootPath)
+	sstableDir := filepath.Join(rootPath, "sstables")
+	nextSeq, tables, err := loadOrInitManifest(sstableDir)
 	if err != nil {
 		return nil, fmt.Errorf("lsm init: %w", err)
 	}
-
+	w, err := newWAL(rootPath, "wal")
+	if err != nil {
+		return nil, err
+	}
 	res := &LSM{
+		wal: w,
 		manifest: &LSMManifest{
-			rootPath:            rootPath,
+			rootPath:            sstableDir,
 			orderedTableRefs:    tables,
 			nextSeq:             nextSeq,
 			maxBytesBeforeFlush: 500 * 1024 * 1024, //500MB
@@ -245,6 +251,7 @@ func (lsm *LSM) readFromSSTable(key []byte, path string) ([]byte, bool, error) {
 
 // Flush persists the current memtable on disk
 func (lsm *LSM) Flush() error {
+	lsm.wal.switchReference() // swap WAL references
 	// Swap memtable: old becomes immutable, new accepts writes
 	old := lsm.memTable.Load()
 	lsm.immutableMemTable.Store(old)

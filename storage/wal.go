@@ -23,12 +23,13 @@ type WAL struct {
 	mu sync.Mutex
 }
 
-func newWAL(dir string) (*WAL, error) {
-	if err := os.MkdirAll(dir, 0755); err != nil {
+func newWAL(base string, dir string) (*WAL, error) {
+	fullPath := filepath.Join(base, dir)
+	if err := os.MkdirAll(fullPath, 0755); err != nil {
 		return nil, fmt.Errorf("wal init: mkdir: %w", err)
 	}
 
-	w := &WAL{dir: dir}
+	w := &WAL{dir: fullPath}
 	if err := w.openNew(); err != nil {
 		return nil, fmt.Errorf("wal init: %w", err)
 	}
