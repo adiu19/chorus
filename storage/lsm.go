@@ -3,7 +3,6 @@ package storage
 import (
 	"bufio"
 	"bytes"
-	"encoding/binary"
 	"fmt"
 	"io"
 	"os"
@@ -219,53 +218,25 @@ func (lsm *LSM) readFromSSTable(key []byte, path string) ([]byte, bool, error) {
 
 	r := bufio.NewReader(f)
 
-	// read bloom filter one time, skip since we don't need this data really; our BF is already front-loaded into LSM manifest for in-memory read
-	bf := make([]byte, 8 * 1024)
-	if _, err := io.ReadFull(r, bf); err != nil {
-		return nil, false, fmt.Errorf("read sstable: read bloom filter: %w", err)
+	// skip bloom filter — already loaded in memory from manifest init
+	if _, err := io.ReadFull(r, make([]byte, bloomFilterSize)); err != nil {
+		return nil, false, fmt.Errorf("read sstable: skip bloom filter: %w", err)
 	}
+
 	for {
-		
-		// Tombstone: 1 byte
-		tomb, err := r.ReadByte()
+		entry, err := ReadKVEntry(r)
 		if err != nil {
-			break // EOF or error — key not in this file
+			return nil, false, fmt.Errorf("read sstable: %w", err)
+		}
+		if entry == nil {
+			break // EOF
 		}
 
-		// Key length: 1 byte
-		keyLen, err := r.ReadByte()
-		if err != nil {
-			return nil, false, fmt.Errorf("read sstable: read key len: %w", err)
-		}
-
-		// Key
-		entryKey := make([]byte, keyLen)
-		if _, err := io.ReadFull(r, entryKey); err != nil {
-			return nil, false, fmt.Errorf("read sstable: read key: %w", err)
-		}
-
-		// Value length: 2 bytes (big-endian)
-		valLenBuf := make([]byte, 2)
-		if _, err := io.ReadFull(r, valLenBuf); err != nil {
-			return nil, false, fmt.Errorf("read sstable: read val len: %w", err)
-		}
-		valLen := binary.BigEndian.Uint16(valLenBuf)
-
-		// Check if this is the key we want
-		if bytes.Equal(entryKey, key) {
-			if tomb == 1 {
+		if bytes.Equal(entry.Key, key) {
+			if entry.Tombstone {
 				return nil, true, nil // tombstone — key was deleted
 			}
-			val := make([]byte, valLen)
-			if _, err := io.ReadFull(r, val); err != nil {
-				return nil, false, fmt.Errorf("read sstable: read value: %w", err)
-			}
-			return val, true, nil
-		}
-
-		// Not our key — skip past the value
-		if _, err := r.Discard(int(valLen)); err != nil {
-			return nil, false, fmt.Errorf("read sstable: skip value: %w", err)
+			return entry.Val, true, nil
 		}
 	}
 
@@ -305,41 +276,11 @@ func (lsm *LSM) Flush() error {
 	node := old.Head.Forward[0]
 	sizeInBytes := 0
 	for node != nil {
-		// Tombstone: 1 byte
-		var tomb byte = node.Tombstone
-		sizeInBytes++
-		if err := w.WriteByte(tomb); err != nil {
-			return fmt.Errorf("flush: write tombstone: %w", err)
+		n, err := WriteKVEntry(w, node.Key, node.Value, node.Tombstone)
+		if err != nil {
+			return fmt.Errorf("flush: %w", err)
 		}
-
-		// Key length: 1 byte (uint8)
-		if err := w.WriteByte(uint8(len(node.Key))); err != nil {
-			return fmt.Errorf("flush: write key len: %w", err)
-		}
-
-		sizeInBytes++
-
-		// Key
-		if _, err := w.Write(node.Key); err != nil {
-			return fmt.Errorf("flush: write key: %w", err)
-		}
-
-		
-		sizeInBytes += len(node.Key)
-
-		// Value length: 2 bytes (uint16, big-endian)
-		valLenBuf := make([]byte, 2)
-		binary.BigEndian.PutUint16(valLenBuf, uint16(len(node.Value)))
-		if _, err := w.Write(valLenBuf); err != nil {
-			return fmt.Errorf("flush: write val len: %w", err)
-		}
-
-		sizeInBytes += 2 + len(node.Value)
-
-		// Value
-		if _, err := w.Write(node.Value); err != nil {
-			return fmt.Errorf("flush: write value: %w", err)
-		}
+		sizeInBytes += n
 
 		// Track min/max keys
 		if minKey == nil {
