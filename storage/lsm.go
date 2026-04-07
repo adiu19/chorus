@@ -52,6 +52,7 @@ type KVEntry struct {
 // NewLSM inits a new LSM
 func NewLSM(rootPath string) (*LSM, error) {
 	sstableDir := filepath.Join(rootPath, "sstables")
+
 	nextSeq, tables, err := loadOrInitManifest(sstableDir)
 	if err != nil {
 		return nil, fmt.Errorf("lsm init: %w", err)
@@ -70,6 +71,9 @@ func NewLSM(rootPath string) (*LSM, error) {
 		},
 	}
 	res.memTable.Store(NewSkipList())
+	if err := res.RecoverExistingWALs(); err != nil {
+		return nil, fmt.Errorf("lsm init: %w", err)
+	}
 	return res, nil
 }
 
@@ -249,14 +253,9 @@ func (lsm *LSM) readFromSSTable(key []byte, path string) ([]byte, bool, error) {
 	return nil, false, nil
 }
 
-// Flush persists the current memtable on disk
-func (lsm *LSM) Flush() error {
-	lsm.wal.switchReference() // swap WAL references
-	// Swap memtable: old becomes immutable, new accepts writes
-	old := lsm.memTable.Load()
-	lsm.immutableMemTable.Store(old)
-	lsm.memTable.Store(NewSkipList())
-
+// writeSkipListToSSTable writes a skiplist to a new SSTable file, fsyncs it, and updates the manifest.
+// Reused by both Flush (normal operation) and recovery (WAL replay).
+func (lsm *LSM) writeSkipListToSSTable(sl *SkipList) error {
 	// Build file path
 	seq := lsm.manifest.nextSeq
 	lsm.manifest.nextSeq++
@@ -266,26 +265,26 @@ func (lsm *LSM) Flush() error {
 	// Create file
 	f, err := os.Create(path)
 	if err != nil {
-		return fmt.Errorf("flush: create file: %w", err)
+		return fmt.Errorf("write sstable: create file: %w", err)
 	}
 	defer f.Close()
 
 	w := bufio.NewWriter(f)
 
 	// Pass 1: build bloom filter from skiplist keys, write it as the first 8KB
-	bf := old.BuildBloomFilter()
+	bf := sl.BuildBloomFilter()
 	if _, err := w.Write(bf.BitMap); err != nil {
-		return fmt.Errorf("flush: write bloom filter: %w", err)
+		return fmt.Errorf("write sstable: write bloom filter: %w", err)
 	}
 
 	// Pass 2: walk level 0 of the skiplist (sorted order), write each entry
 	var minKey, maxKey []byte
-	node := old.Head.Forward[0]
+	node := sl.Head.Forward[0]
 	sizeInBytes := 0
 	for node != nil {
 		n, err := WriteKVEntry(w, node.Key, node.Value, node.Tombstone)
 		if err != nil {
-			return fmt.Errorf("flush: %w", err)
+			return fmt.Errorf("write sstable: %w", err)
 		}
 		sizeInBytes += n
 
@@ -300,12 +299,12 @@ func (lsm *LSM) Flush() error {
 
 	// Flush buffer to OS
 	if err := w.Flush(); err != nil {
-		return fmt.Errorf("flush: bufio flush: %w", err)
+		return fmt.Errorf("write sstable: bufio flush: %w", err)
 	}
 
 	// Fsync to disk
 	if err := f.Sync(); err != nil {
-		return fmt.Errorf("flush: fsync: %w", err)
+		return fmt.Errorf("write sstable: fsync: %w", err)
 	}
 
 	// Update manifest in memory: prepend (newest first)
@@ -319,13 +318,64 @@ func (lsm *LSM) Flush() error {
 	}
 	lsm.manifest.orderedTableRefs = append([]SSTable{sstable}, lsm.manifest.orderedTableRefs...)
 
-	// Append SSTable entry to manifest file and update nextSeq on first line
+	// Append SSTable entry to manifest file
 	if err := lsm.persistManifest(sstable); err != nil {
-		return fmt.Errorf("flush: update manifest: %w", err)
+		return fmt.Errorf("write sstable: update manifest: %w", err)
+	}
+
+	return nil
+}
+
+// Flush persists the current memtable on disk
+func (lsm *LSM) Flush() error {
+	lsm.wal.switchReference() // swap WAL references
+	// Swap memtable: old becomes immutable, new accepts writes
+	old := lsm.memTable.Load()
+	lsm.immutableMemTable.Store(old)
+	lsm.memTable.Store(NewSkipList())
+
+	if err := lsm.writeSkipListToSSTable(old); err != nil {
+		return err
 	}
 
 	// Clear immutable memtable
 	lsm.immutableMemTable.Store(nil)
+
+	return nil
+}
+
+// RecoverExistingWALs is triggered on process startup to ensure that any WALs that are lying around are processed
+// before we make our engine available.
+func (lsm *LSM) RecoverExistingWALs() error {
+	// 1. read all old WAL files
+	entries, paths, err := lsm.wal.readAllEntries()
+	if err != nil {
+		return fmt.Errorf("recovery: %w", err)
+	}
+
+	if len(entries) == 0 {
+		return nil // nothing to recover
+	}
+
+	// 2. build skiplist from WAL entries
+	sl := NewSkipList()
+	for _, entry := range entries {
+		if entry.Tombstone {
+			sl.InsertWithTombstone(entry.Key)
+		} else {
+			sl.Insert(entry.Key, entry.Val)
+		}
+	}
+
+	// 3. write skiplist to SSTable (fsync + manifest update)
+	if err := lsm.writeSkipListToSSTable(sl); err != nil {
+		return fmt.Errorf("recovery: %w", err)
+	}
+
+	// 4. delete old WAL files — data is now durable in SSTable
+	if err := lsm.wal.deleteFiles(paths); err != nil {
+		return fmt.Errorf("recovery: %w", err)
+	}
 
 	return nil
 }

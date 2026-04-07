@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"sync"
 	"time"
@@ -95,4 +96,60 @@ func (w *WAL) switchReference() (string, error) {
 	}
 
 	return oldPath, nil
+}
+
+// readAllEntries reads all WAL files in the directory (sorted by epoch), parses entries, and returns them.
+// Also returns the file paths so the caller can delete them after processing.
+func (w *WAL) readAllEntries() ([]KVEntry, []string, error) {
+	entries, err := os.ReadDir(w.dir)
+	if err != nil {
+		return nil, nil, fmt.Errorf("wal recovery: read dir: %w", err)
+	}
+
+	// collect and sort WAL files by name (epoch in name gives chronological order)
+	var walFiles []string
+	for _, e := range entries {
+		if !e.IsDir() && len(e.Name()) > len(fnamePrefix) && e.Name()[:len(fnamePrefix)] == fnamePrefix {
+			// skip the current active WAL file
+			if filepath.Join(w.dir, e.Name()) == w.file.Name() {
+				continue
+			}
+			walFiles = append(walFiles, filepath.Join(w.dir, e.Name()))
+		}
+	}
+	sort.Strings(walFiles)
+
+	var result []KVEntry
+	for _, path := range walFiles {
+		f, err := os.Open(path)
+		if err != nil {
+			return nil, nil, fmt.Errorf("wal recovery: open %s: %w", path, err)
+		}
+
+		r := bufio.NewReader(f)
+		for {
+			entry, err := ReadKVEntry(r)
+			if err != nil {
+				f.Close()
+				return nil, nil, fmt.Errorf("wal recovery: read %s: %w", path, err)
+			}
+			if entry == nil {
+				break // EOF
+			}
+			result = append(result, *entry)
+		}
+		f.Close()
+	}
+
+	return result, walFiles, nil
+}
+
+// deleteFiles removes the given file paths from disk
+func (w *WAL) deleteFiles(paths []string) error {
+	for _, path := range paths {
+		if err := os.Remove(path); err != nil {
+			return fmt.Errorf("wal cleanup: delete %s: %w", path, err)
+		}
+	}
+	return nil
 }
