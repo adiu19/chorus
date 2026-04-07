@@ -412,12 +412,18 @@ func (lsm *LSM) persistManifest(sst SSTable) error {
 // Insert adds a new KV into the LSM
 func (lsm *LSM) Insert(key []byte, value []byte) error {
 	defer lsm.checkAndTriggerAutoFlush()
+	if err := lsm.wal.write(key, value, 0); err != nil {
+		return fmt.Errorf("insert: %w", err)
+	}
 	return lsm.memTable.Load().Insert(key, value)
 }
 
 // Delete marks a key for deletion
 func (lsm *LSM) Delete(key []byte) error {
 	defer lsm.checkAndTriggerAutoFlush()
+	if err := lsm.wal.write(key, []byte{}, 1); err != nil {
+		return fmt.Errorf("delete: %w", err)
+	}
 	return lsm.memTable.Load().InsertWithTombstone(key)
 }
 
