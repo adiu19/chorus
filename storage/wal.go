@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -21,7 +22,19 @@ type WAL struct {
 	// TODO: deprecate locks
 	// caller blocks until fsync: Insert adds to the buffer and waits until the batch is fsynced before returning. Durability is the same as per-write fsync. Latency per write goes up (we wait for the batch window),
 	// but throughput goes up massively (one fsync for N writes).
-	mu sync.Mutex
+	mu     sync.Mutex
+	buffer atomic.Pointer[WALBuffer]
+	ticker *time.Ticker
+	done   chan bool
+}
+
+// WALBuffer is intended to buffer write intents to avoid excessive fsync calls and improve throughput
+// since WAL writes sit on the critical path
+type WALBuffer struct {
+	// NOTE: appending to the slice via atomic pointer is not safe — two goroutines can Load(), append, Store()
+	// and one append is lost. The atomic only guarantees a clean swap in bufferedWrite(). Appends need mutex protection.
+	entries  []KVEntry
+	activeCh chan bool
 }
 
 func newWAL(base string, dir string) (*WAL, error) {
@@ -30,11 +43,70 @@ func newWAL(base string, dir string) (*WAL, error) {
 		return nil, fmt.Errorf("wal init: mkdir: %w", err)
 	}
 
-	w := &WAL{dir: fullPath}
+	w := &WAL{
+		dir:    fullPath,
+		ticker: time.NewTicker(10 * time.Millisecond),
+		done:   make(chan bool),
+	}
+	w.buffer.Store(newBuffer())
+
 	if err := w.openNew(); err != nil {
 		return nil, fmt.Errorf("wal init: %w", err)
 	}
+
+	go w.bufferedWrite()
 	return w, nil
+}
+
+func (w *WAL) close() {
+	close(w.done)
+	// clean up other resources
+}
+
+func newBuffer() *WALBuffer {
+	b := WALBuffer{
+		entries:  []KVEntry{},
+		activeCh: make(chan bool),
+	}
+
+	return &b
+}
+
+func (w *WAL) bufferedWrite() {
+	for {
+		select {
+		case <-w.done:
+			return
+		case <-w.ticker.C:
+			// part 0: create a new buffer and channel
+			upcoming := WALBuffer{
+				entries:  []KVEntry{},
+				activeCh: make(chan bool),
+			}
+			prev := w.buffer.Swap(&upcoming)
+			if len(prev.entries) > 0 {
+				// write all buffered entries to disk
+				for _, entry := range prev.entries {
+					if _, err := WriteKVEntry(w.writer, entry.Key, entry.Val, entry.Tombstone); err != nil {
+						fmt.Println("wal buffered write failed:", err)
+						break
+					}
+				}
+				// flush bufio buffer to OS, then fsync to disk
+				// TODO: errors here are printed but writers still get unblocked via close(activeCh)
+				// they think their batch succeeded. To fix: store the error on WALBuffer, have writers
+				// check it after <-ch and return it from write().
+				if err := w.writer.Flush(); err != nil {
+					fmt.Println("wal buffered flush failed:", err)
+				}
+				if err := w.file.Sync(); err != nil {
+					fmt.Println("wal buffered fsync failed:", err)
+				}
+				// wake all writers waiting on this batch
+				close(prev.activeCh)
+			}
+		}
+	}
 }
 
 // openNew creates a new WAL file and sets it as the active writer
@@ -53,20 +125,19 @@ func (w *WAL) openNew() error {
 }
 
 func (w *WAL) write(key []byte, value []byte, tombstone byte) error {
+	// lock to protect concurrent appends to the same buffer
 	w.mu.Lock()
-	defer w.mu.Unlock()
+	current := w.buffer.Load()
+	current.entries = append(current.entries, KVEntry{
+		Key:       key,
+		Val:       value,
+		Tombstone: tombstone,
+	})
+	ch := current.activeCh // grab channel reference before unlocking
+	w.mu.Unlock()
 
-	if _, err := WriteKVEntry(w.writer, key, value, tombstone); err != nil {
-		return fmt.Errorf("wal write: %w", err)
-	}
-
-	// flush bufio buffer to OS, then fsync to disk
-	if err := w.writer.Flush(); err != nil {
-		return fmt.Errorf("wal flush buffer: %w", err)
-	}
-	if err := w.file.Sync(); err != nil {
-		return fmt.Errorf("wal fsync: %w", err)
-	}
+	// block until this batch is fsynced by the ticker goroutine
+	<-ch
 
 	return nil
 }

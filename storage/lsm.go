@@ -42,7 +42,7 @@ type SSTable struct {
 
 // KVEntry represents one KV in our SSTable
 type KVEntry struct {
-	Tombstone bool
+	Tombstone byte
 	KeySize   uint8 // byte array transformed into uint8 on disk load
 	Key       []byte
 	ValSize   uint16 // byte array transformed into uint16. on disk load
@@ -243,7 +243,7 @@ func (lsm *LSM) readFromSSTable(key []byte, path string) ([]byte, bool, error) {
 		}
 
 		if bytes.Equal(entry.Key, key) {
-			if entry.Tombstone {
+			if entry.Tombstone == 1 {
 				return nil, true, nil // tombstone — key was deleted
 			}
 			return entry.Val, true, nil
@@ -360,7 +360,7 @@ func (lsm *LSM) RecoverExistingWALs() error {
 	// 2. build skiplist from WAL entries
 	sl := NewSkipList()
 	for _, entry := range entries {
-		if entry.Tombstone {
+		if entry.Tombstone == 1 {
 			sl.InsertWithTombstone(entry.Key)
 		} else {
 			sl.Insert(entry.Key, entry.Val)

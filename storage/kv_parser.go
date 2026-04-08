@@ -38,7 +38,7 @@ func ReadKVEntry(r *bufio.Reader) (*KVEntry, error) {
 	}
 
 	return &KVEntry{
-		Tombstone: tomb == 1,
+		Tombstone: tomb,
 		KeySize:   keyLen,
 		Key:       key,
 		ValSize:   valLen,
