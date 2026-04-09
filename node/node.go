@@ -14,7 +14,7 @@ import (
 	"github.com/chorus/ring"
 	"github.com/chorus/scheduler/core"
 	"github.com/chorus/scheduler/job"
-	"github.com/chorus/wal"
+	"github.com/chorus/storage"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -32,14 +32,11 @@ type Node struct {
 
 	peers     *cluster.PeerList
 	ring      *ring.Ring
-	wal       *wal.WAL
+	lsm       *storage.LSM
 	scheduler *core.Scheduler
 
 	mu        sync.RWMutex
 	heartbeat int64 // this node's heartbeat counter, only we increment this
-
-	dataMu sync.RWMutex
-	data   map[string][]byte // key-value storage
 
 	connMu sync.RWMutex
 	conns  map[string]*grpc.ClientConn // addr -> persistent connection
@@ -48,27 +45,22 @@ type Node struct {
 func NewNode(id, port string, seeds []string) *Node {
 	addr := "localhost:" + port
 
+	dataDir := filepath.Join("data", "nodes", id)
+	lsm, err := storage.NewLSM(dataDir)
+	if err != nil {
+		log.Fatalf("Failed to init LSM: %v", err)
+	}
+
 	node := &Node{
 		ID:        id,
 		Port:      port,
 		Addr:      addr,
 		peers:     cluster.NewPeerList(id, addr),
 		ring:      ring.New(),
+		lsm:       lsm,
 		heartbeat: 0,
-		data:      make(map[string][]byte),
 		conns:     make(map[string]*grpc.ClientConn),
 	}
-
-	// Initialize WAL
-	walDir := filepath.Join("data", "nodes", id)
-	w, err := wal.Open(walDir)
-	if err != nil {
-		log.Fatalf("Failed to open WAL: %v", err)
-	}
-	node.wal = w
-
-	// Replay WAL entries
-	node.replayWAL()
 
 	// Add seeds (we don't know their IDs yet, use address as temp ID)
 	// Skip our own address
@@ -111,19 +103,6 @@ func (n *Node) incrementHeartbeat() int64 {
 	return n.heartbeat
 }
 
-// replayWAL replays all WAL entries to restore state.
-func (n *Node) replayWAL() {
-	entries, _ := n.wal.ReadAll()
-	for _, e := range entries {
-		if e.Op == "put" {
-			n.data[e.Key] = e.Value
-		}
-	}
-	if len(entries) > 0 {
-		n.wal.SetIndex(entries[len(entries)-1].Seq)
-		log.Printf("[%s] Replayed %d WAL entries", n.ID, len(entries))
-	}
-}
 
 // getPeerInfosWithSelf returns all known peers plus self as PeerInfo slice.
 func (n *Node) getPeerInfosWithSelf() []cluster.PeerInfo {
@@ -301,17 +280,10 @@ func (n *Node) Put(ctx context.Context, req *pb.PutRequest) (*pb.PutResponse, er
 		}, nil
 	}
 
-	// All replicas succeeded - write to WAL and store locally
-	seq, err := n.wal.Append("primary", "put", req.Key, req.Value)
-	if err != nil {
+	// All replicas succeeded - store locally via LSM
+	if err := n.lsm.Insert([]byte(req.Key), req.Value); err != nil {
 		return nil, err
 	}
-
-	n.dataMu.Lock()
-	n.data[req.Key] = req.Value
-	n.dataMu.Unlock()
-
-	n.wal.SetIndex(seq)
 
 	// Add self to replica status
 	replicaStatuses = append([]*pb.ReplicaStatus{{
@@ -370,33 +342,27 @@ func (n *Node) Get(ctx context.Context, req *pb.GetRequest) (*pb.GetResponse, er
 		}, nil
 	}
 
-	// We own it - look up the value
-	n.dataMu.RLock()
-	value, found := n.data[req.Key]
-	n.dataMu.RUnlock()
+	// We own it - look up via LSM
+	value, err := n.lsm.Get([]byte(req.Key))
+	if err != nil {
+		return nil, err
+	}
 
-	log.Printf("[%s] Get key=%s found=%v", n.ID, req.Key, found)
+	log.Printf("[%s] Get key=%s found=%v", n.ID, req.Key, value != nil)
 
 	return &pb.GetResponse{
-		Found: found,
+		Found: value != nil,
 		Value: value,
 	}, nil
 }
 
 // Replicate RPC - stores a value directly without ownership check (used by primary)
 func (n *Node) Replicate(ctx context.Context, req *pb.ReplicateRequest) (*pb.ReplicateResponse, error) {
-	seq, err := n.wal.Append("replica", "put", req.Key, req.Value)
-	if err != nil {
+	if err := n.lsm.Insert([]byte(req.Key), req.Value); err != nil {
 		return nil, err
 	}
 
-	n.dataMu.Lock()
-	n.data[req.Key] = req.Value
-	n.dataMu.Unlock()
-
-	n.wal.SetIndex(seq)
-
-	log.Printf("[%s] Replicate key=%s seq=%d", n.ID, req.Key, seq)
+	log.Printf("[%s] Replicate key=%s", n.ID, req.Key)
 
 	return &pb.ReplicateResponse{
 		Stored: true,
