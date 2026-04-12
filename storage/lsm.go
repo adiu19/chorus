@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 // LSM is a wrapper over our data store
@@ -20,6 +21,9 @@ type LSM struct {
 
 	immutableMemTable atomic.Pointer[SkipList] // a skiplist is marked as immutable when it no longer wants to accept writes and wants to be "flushed"
 	mu                sync.Mutex
+	levels            [][]SSTable
+	compactTicker     *time.Ticker
+	done              chan bool
 }
 
 // LSMManifest captures the metadata required to load the data references
@@ -57,7 +61,9 @@ func NewLSM(rootPath string) (*LSM, error) {
 	if err != nil {
 		return nil, fmt.Errorf("lsm init: %w", err)
 	}
-	w, err := newWAL(rootPath, "wal")
+
+	done := make(chan bool)
+	w, err := newWAL(rootPath, "wal", done)
 	if err != nil {
 		return nil, err
 	}
@@ -69,12 +75,20 @@ func NewLSM(rootPath string) (*LSM, error) {
 			nextSeq:             nextSeq,
 			maxBytesBeforeFlush: 500 * 1024 * 1024, //500MB
 		},
+		compactTicker: time.NewTicker(60 * time.Second),
+		done:          done,
 	}
 	res.memTable.Store(NewSkipList())
 	if err := res.RecoverExistingWALs(); err != nil {
 		return nil, fmt.Errorf("lsm init: %w", err)
 	}
+	go res.Compact()
 	return res, nil
+}
+
+// Close closes all resources within the LSM
+func (lsm *LSM) Close() {
+	close(lsm.done)
 }
 
 const manifestFile = "manifest.mf"
@@ -439,5 +453,37 @@ func (lsm *LSM) checkAndTriggerAutoFlush() {
 				lsm.mu.Unlock()
 			}
 		}()
+	}
+}
+
+// Compact manages the compaction our sstables
+func (lsm *LSM) Compact() {
+	// 1. start a goroutine
+	// 2. goroutine wakes every 60 seconds (via ticker), checks number of ss tables at L0
+	// 3. if count of sstables exceed a threshold, it triggers a cascading effect where we first compact L0 into L1
+	// 4. if L1 size exceeds its threshold, we move down to L2. same for L3
+	for {
+		select {
+		case <-lsm.compactTicker.C:
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						fmt.Println("compactor panicked:", r)
+					}
+				}()
+				lsm.mergeSSTables()
+			}()
+		case <-lsm.done:
+			lsm.compactTicker.Stop()
+			return
+
+		}
+
+	}
+}
+
+func (lsm *LSM) mergeSSTables() {
+	if len(lsm.levels[0]) > 100 { // if the number of ss tables in level 0 is greater than 100
+
 	}
 }

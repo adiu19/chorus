@@ -37,7 +37,7 @@ type WALBuffer struct {
 	activeCh chan bool
 }
 
-func newWAL(base string, dir string) (*WAL, error) {
+func newWAL(base string, dir string, done chan bool) (*WAL, error) {
 	fullPath := filepath.Join(base, dir)
 	if err := os.MkdirAll(fullPath, 0755); err != nil {
 		return nil, fmt.Errorf("wal init: mkdir: %w", err)
@@ -46,7 +46,7 @@ func newWAL(base string, dir string) (*WAL, error) {
 	w := &WAL{
 		dir:    fullPath,
 		ticker: time.NewTicker(10 * time.Millisecond),
-		done:   make(chan bool),
+		done:   done,
 	}
 	w.buffer.Store(newBuffer())
 
@@ -56,11 +56,6 @@ func newWAL(base string, dir string) (*WAL, error) {
 
 	go w.bufferedWrite()
 	return w, nil
-}
-
-func (w *WAL) close() {
-	close(w.done)
-	// clean up other resources
 }
 
 func newBuffer() *WALBuffer {
