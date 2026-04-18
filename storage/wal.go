@@ -45,7 +45,7 @@ func newWAL(base string, dir string, done chan bool) (*WAL, error) {
 
 	w := &WAL{
 		dir:    fullPath,
-		ticker: time.NewTicker(10 * time.Millisecond),
+		ticker: time.NewTicker(5 * time.Millisecond),
 		done:   done,
 	}
 	w.buffer.Store(newBuffer())
