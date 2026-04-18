@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"hash"
 	"hash/fnv"
-	"io"
 	"os"
 )
 
@@ -36,20 +35,17 @@ func NewBloomFilterWithBitMap(bitMap []byte) *BloomFilter {
 	}
 }
 
-// LoadBloomFilterFromSSTable reads the first 8KB of an SSTable file and returns a BloomFilter
-func LoadBloomFilterFromSSTable(path string) (*BloomFilter, error) {
-	f, err := os.Open(path)
+// LoadBloomFilter reads the .bloom file from an SSTable directory
+func LoadBloomFilter(sstableDir string) (*BloomFilter, error) {
+	bloomPath := sstableDir + "/.bloom"
+	data, err := os.ReadFile(bloomPath)
 	if err != nil {
-		return nil, fmt.Errorf("load bloom filter: open: %w", err)
+		return nil, fmt.Errorf("load bloom filter: %w", err)
 	}
-	defer f.Close()
-
-	bitMap := make([]byte, bloomFilterSize)
-	if _, err := io.ReadFull(f, bitMap); err != nil {
-		return nil, fmt.Errorf("load bloom filter: read: %w", err)
+	if len(data) != bloomFilterSize {
+		return nil, fmt.Errorf("load bloom filter: expected %d bytes, got %d", bloomFilterSize, len(data))
 	}
-
-	return NewBloomFilterWithBitMap(bitMap), nil
+	return NewBloomFilterWithBitMap(data), nil
 }
 
 func (bf *BloomFilter) hash(key []byte) (uint32, uint32) {

@@ -4,14 +4,19 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 )
+
+const capL0 = 4
+const capL1 = 10
+const capL2 = 100
+const capL3 = 1000
 
 // LSM is a wrapper over our data store
 type LSM struct {
@@ -29,8 +34,7 @@ type LSM struct {
 // LSMManifest captures the metadata required to load the data references
 type LSMManifest struct {
 	rootPath            string
-	orderedTableRefs    []SSTable
-	nextSeq             int64
+	nextSeq             atomic.Int64
 	maxBytesBeforeFlush int
 }
 
@@ -57,7 +61,11 @@ type KVEntry struct {
 func NewLSM(rootPath string) (*LSM, error) {
 	sstableDir := filepath.Join(rootPath, "sstables")
 
-	nextSeq, tables, err := loadOrInitManifest(sstableDir)
+	if err := initSSTableDir(sstableDir); err != nil {
+		return nil, fmt.Errorf("lsm init: %w", err)
+	}
+
+	levels, nextSeq, err := loadSSTablesFromDisk(sstableDir)
 	if err != nil {
 		return nil, fmt.Errorf("lsm init: %w", err)
 	}
@@ -71,13 +79,13 @@ func NewLSM(rootPath string) (*LSM, error) {
 		wal: w,
 		manifest: &LSMManifest{
 			rootPath:            sstableDir,
-			orderedTableRefs:    tables,
-			nextSeq:             nextSeq,
 			maxBytesBeforeFlush: 500 * 1024 * 1024, //500MB
 		},
+		levels:        levels,
 		compactTicker: time.NewTicker(60 * time.Second),
 		done:          done,
 	}
+	res.manifest.nextSeq.Store(nextSeq)
 	res.memTable.Store(NewSkipList())
 	if err := res.RecoverExistingWALs(); err != nil {
 		return nil, fmt.Errorf("lsm init: %w", err)
@@ -91,95 +99,113 @@ func (lsm *LSM) Close() {
 	close(lsm.done)
 }
 
-const manifestFile = "manifest.mf"
+const numLevels = 4
 
-// loadOrInitManifest reads the manifest file from rootPath.
-// If it exists, parses SSTable entries and derives nextSeq from the last entry.
-// If it doesn't exist, creates an empty manifest file.
-func loadOrInitManifest(rootPath string) (int64, []SSTable, error) {
-	path := filepath.Join(rootPath, manifestFile)
-
-	data, err := os.ReadFile(path)
-	if err == nil {
-		lines := strings.Split(strings.TrimSpace(string(data)), "\n")
-		var tables []SSTable
-		for _, line := range lines {
-			if line == "" {
-				continue
-			}
-			sst, parseErr := parseSSTableLine(line)
-			if parseErr != nil {
-				return 0, nil, fmt.Errorf("parse manifest sstable: %w", parseErr)
-			}
-			bf, bfErr := LoadBloomFilterFromSSTable(filepath.Join(rootPath, sst.PathRef))
-			if bfErr != nil {
-				return 0, nil, fmt.Errorf("load bloom filter: %w", bfErr)
-			}
-			sst.BF = bf
-			tables = append(tables, sst)
+// initSSTableDir ensures the sstable root directory and level subdirectories exist.
+func initSSTableDir(rootPath string) error {
+	for i := 0; i < numLevels; i++ {
+		levelDir := filepath.Join(rootPath, fmt.Sprintf("L%d", i))
+		if err := os.MkdirAll(levelDir, 0755); err != nil {
+			return fmt.Errorf("create level dir L%d: %w", i, err)
 		}
-
-		// Derive nextSeq from the last (newest) entry
-		var nextSeq int64 = 1
-		if len(tables) > 0 {
-			nextSeq = tables[len(tables)-1].CreationSeq + 1
-		}
-
-		// Reverse so newest is first (last appended = newest)
-		for i, j := 0, len(tables)-1; i < j; i, j = i+1, j-1 {
-			tables[i], tables[j] = tables[j], tables[i]
-		}
-
-		return nextSeq, tables, nil
 	}
-
-	if !os.IsNotExist(err) {
-		return 0, nil, fmt.Errorf("read manifest: %w", err)
-	}
-
-	if err := os.MkdirAll(rootPath, 0755); err != nil {
-		return 0, nil, fmt.Errorf("create root path: %w", err)
-	}
-	if err := os.WriteFile(path, []byte(""), 0644); err != nil {
-		return 0, nil, fmt.Errorf("write manifest: %w", err)
-	}
-	return 1, nil, nil
+	return nil
 }
 
-// parseSSTableLine parses a line like:
-// sstable_000001.dat,seq=1,size=4096,minKey=<base62>,maxKey=<base62>
-func parseSSTableLine(line string) (SSTable, error) {
-	parts := strings.Split(line, ",")
-	if len(parts) != 5 {
-		return SSTable{}, fmt.Errorf("expected 5 fields, got %d: %s", len(parts), line)
+// loadSSTablesFromDisk scans all level directories, loads valid SSTables (those with .stats),
+// and deletes incomplete ones. Returns the levels and the next sequence number.
+func loadSSTablesFromDisk(rootPath string) ([][]SSTable, int64, error) {
+	levels := make([][]SSTable, numLevels)
+	var maxSeq int64
+
+	for i := 0; i < numLevels; i++ {
+		levelDir := filepath.Join(rootPath, fmt.Sprintf("L%d", i))
+		entries, err := os.ReadDir(levelDir)
+		if err != nil {
+			return nil, 0, fmt.Errorf("scan level L%d: %w", i, err)
+		}
+
+		for _, entry := range entries {
+			if !entry.IsDir() {
+				continue
+			}
+
+			sstDir := filepath.Join(levelDir, entry.Name())
+			statsPath := filepath.Join(sstDir, ".stats")
+
+			statsData, err := os.ReadFile(statsPath)
+			if err != nil {
+				// no .stats  - incomplete SSTable, clean it up
+				os.RemoveAll(sstDir)
+				continue
+			}
+
+			sst, err := parseStats(sstDir, statsData)
+			if err != nil {
+				os.RemoveAll(sstDir)
+				continue
+			}
+
+			// load bloom filter
+			bf, err := LoadBloomFilter(sstDir)
+			if err != nil {
+				os.RemoveAll(sstDir)
+				continue
+			}
+			sst.BF = bf
+
+			if sst.CreationSeq > maxSeq {
+				maxSeq = sst.CreationSeq
+			}
+
+			levels[i] = append(levels[i], sst)
+		}
+
+		// sort each level by CreationSeq (newest first)
+		sort.Slice(levels[i], func(a, b int) bool {
+			return levels[i][a].CreationSeq > levels[i][b].CreationSeq
+		})
 	}
 
-	filename := parts[0]
+	return levels, maxSeq + 1, nil
+}
 
-	var seq int64
-	if _, err := fmt.Sscanf(parts[1], "seq=%d", &seq); err != nil {
-		return SSTable{}, fmt.Errorf("parse seq: %w", err)
-	}
-
-	var size int
-	if _, err := fmt.Sscanf(parts[2], "size=%d", &size); err != nil {
-		return SSTable{}, fmt.Errorf("parse size: %w", err)
+// parseStats parses a .stats file into an SSTable struct.
+// Format:
+//
+//	minKey=<base62>
+//	maxKey=<base62>
+//	size=<int>
+//	seq=<int>
+func parseStats(sstDir string, data []byte) (SSTable, error) {
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if len(lines) != 4 {
+		return SSTable{}, fmt.Errorf("parse stats: expected 4 lines, got %d", len(lines))
 	}
 
 	var minKeyB62, maxKeyB62 string
-	if _, err := fmt.Sscanf(parts[3], "minKey=%s", &minKeyB62); err != nil {
-		return SSTable{}, fmt.Errorf("parse minKey: %w", err)
+	var size int
+	var seq int64
+
+	if _, err := fmt.Sscanf(lines[0], "minKey=%s", &minKeyB62); err != nil {
+		return SSTable{}, fmt.Errorf("parse stats: minKey: %w", err)
 	}
-	if _, err := fmt.Sscanf(parts[4], "maxKey=%s", &maxKeyB62); err != nil {
-		return SSTable{}, fmt.Errorf("parse maxKey: %w", err)
+	if _, err := fmt.Sscanf(lines[1], "maxKey=%s", &maxKeyB62); err != nil {
+		return SSTable{}, fmt.Errorf("parse stats: maxKey: %w", err)
+	}
+	if _, err := fmt.Sscanf(lines[2], "size=%d", &size); err != nil {
+		return SSTable{}, fmt.Errorf("parse stats: size: %w", err)
+	}
+	if _, err := fmt.Sscanf(lines[3], "seq=%d", &seq); err != nil {
+		return SSTable{}, fmt.Errorf("parse stats: seq: %w", err)
 	}
 
 	return SSTable{
-		PathRef:     filename,
-		CreationSeq: seq,
-		SizeInBytes: size,
+		PathRef:     sstDir,
 		MinKey:      Base62Decode(minKeyB62),
 		MaxKey:      Base62Decode(maxKeyB62),
+		SizeInBytes: size,
+		CreationSeq: seq,
 	}, nil
 }
 
@@ -207,17 +233,17 @@ func (lsm *LSM) Get(key []byte) ([]byte, error) {
 	return nil, nil
 }
 
-// assumes that SSTable references in LSM are sorted with latest first
+// scanSSTablesForKey searches levels in order: L0 (check all, newest first),
+// then L1, L2, L3 (non-overlapping  - at most one SSTable per level can match).
 func (lsm *LSM) scanSSTablesForKey(key []byte) ([]byte, error) {
-	tables := lsm.manifest.orderedTableRefs
-	for _, table := range tables {
-		if !table.BF.Exists(key) {
-			// if our bloom filter says the key doesn't exist, we trust and move onto the next one.
-			continue
-		}
-		cmpWithMin := bytes.Compare(key, table.MinKey)
-		cmpWithMax := bytes.Compare(key, table.MaxKey)
-		if cmpWithMin >= 0 && cmpWithMax <= 0 {
+	for level := 0; level < numLevels; level++ {
+		for _, table := range lsm.levels[level] {
+			if !table.BF.Exists(key) {
+				continue
+			}
+			if bytes.Compare(key, table.MinKey) < 0 || bytes.Compare(key, table.MaxKey) > 0 {
+				continue
+			}
 			val, found, err := lsm.readFromSSTable(key, table.PathRef)
 			if err != nil {
 				return nil, err
@@ -233,19 +259,15 @@ func (lsm *LSM) scanSSTablesForKey(key []byte) ([]byte, error) {
 
 // readFromSSTable scans an SSTable file for a key.
 // Returns (value, true, nil) if found, (nil, true, nil) if tombstoned, (nil, false, nil) if not present.
-func (lsm *LSM) readFromSSTable(key []byte, path string) ([]byte, bool, error) {
-	f, err := os.Open(path)
+func (lsm *LSM) readFromSSTable(key []byte, sstableDir string) ([]byte, bool, error) {
+	dataPath := filepath.Join(sstableDir, ".data")
+	f, err := os.Open(dataPath)
 	if err != nil {
 		return nil, false, fmt.Errorf("read sstable: open: %w", err)
 	}
 	defer f.Close()
 
 	r := bufio.NewReader(f)
-
-	// skip bloom filter — already loaded in memory from manifest init
-	if _, err := io.ReadFull(r, make([]byte, bloomFilterSize)); err != nil {
-		return nil, false, fmt.Errorf("read sstable: skip bloom filter: %w", err)
-	}
 
 	for {
 		entry, err := ReadKVEntry(r)
@@ -258,7 +280,7 @@ func (lsm *LSM) readFromSSTable(key []byte, path string) ([]byte, bool, error) {
 
 		if bytes.Equal(entry.Key, key) {
 			if entry.Tombstone == 1 {
-				return nil, true, nil // tombstone — key was deleted
+				return nil, true, nil // tombstone  - key was deleted
 			}
 			return entry.Val, true, nil
 		}
@@ -267,77 +289,107 @@ func (lsm *LSM) readFromSSTable(key []byte, path string) ([]byte, bool, error) {
 	return nil, false, nil
 }
 
-// writeSkipListToSSTable writes a skiplist to a new SSTable file, fsyncs it, and updates the manifest.
-// Reused by both Flush (normal operation) and recovery (WAL replay).
-func (lsm *LSM) writeSkipListToSSTable(sl *SkipList) error {
-	// Build file path
-	seq := lsm.manifest.nextSeq
-	lsm.manifest.nextSeq++
-	filename := fmt.Sprintf("sstable_%06d.dat", seq)
-	path := filepath.Join(lsm.manifest.rootPath, filename)
+// writeSkipListToSSTable writes a skiplist to a new SSTable directory with three files:
+//   - .data   - KV entries in binary format
+//   - .bloom  - bloom filter bitmap
+//   - .stats  - min/max keys (written last as commit marker)
+//
+// If .stats is missing, the SSTable is considered incomplete and skipped on startup.
+// Reused by both Flush (normal operation), recovery (WAL replay), and compaction.
+func (lsm *LSM) writeSkipListToSSTable(sl *SkipList, level int) error {
+	seq := lsm.manifest.nextSeq.Load()
+	lsm.manifest.nextSeq.Add(1)
+	dirname := fmt.Sprintf("sstable_%06d", seq)
+	dirPath := filepath.Join(lsm.manifest.rootPath, fmt.Sprintf("L%d", level), dirname)
 
-	// Create file
-	f, err := os.Create(path)
-	if err != nil {
-		return fmt.Errorf("write sstable: create file: %w", err)
+	if err := os.MkdirAll(dirPath, 0755); err != nil {
+		return fmt.Errorf("write sstable: mkdir: %w", err)
 	}
-	defer f.Close()
 
-	w := bufio.NewWriter(f)
-
-	// Pass 1: build bloom filter from skiplist keys, write it as the first 8KB
+	// 1. Write .bloom
 	bf := sl.BuildBloomFilter()
-	if _, err := w.Write(bf.BitMap); err != nil {
-		return fmt.Errorf("write sstable: write bloom filter: %w", err)
+	bloomPath := filepath.Join(dirPath, ".bloom")
+	if err := writeAndSync(bloomPath, bf.BitMap); err != nil {
+		return fmt.Errorf("write sstable: bloom: %w", err)
 	}
 
-	// Pass 2: walk level 0 of the skiplist (sorted order), write each entry
+	// 2. Write .data  - walk level 0 of the skiplist (sorted order)
+	dataPath := filepath.Join(dirPath, ".data")
+	dataFile, err := os.Create(dataPath)
+	if err != nil {
+		return fmt.Errorf("write sstable: create data: %w", err)
+	}
+
+	w := bufio.NewWriter(dataFile)
 	var minKey, maxKey []byte
 	node := sl.Head.Forward[0]
 	sizeInBytes := 0
 	for node != nil {
 		n, err := WriteKVEntry(w, node.Key, node.Value, node.Tombstone)
 		if err != nil {
-			return fmt.Errorf("write sstable: %w", err)
+			dataFile.Close()
+			return fmt.Errorf("write sstable: data: %w", err)
 		}
 		sizeInBytes += n
 
-		// Track min/max keys
 		if minKey == nil {
 			minKey = node.Key
 		}
 		maxKey = node.Key
-
 		node = node.Forward[0]
 	}
 
-	// Flush buffer to OS
 	if err := w.Flush(); err != nil {
-		return fmt.Errorf("write sstable: bufio flush: %w", err)
+		dataFile.Close()
+		return fmt.Errorf("write sstable: data flush: %w", err)
+	}
+	if err := dataFile.Sync(); err != nil {
+		dataFile.Close()
+		return fmt.Errorf("write sstable: data fsync: %w", err)
+	}
+	dataFile.Close()
+
+	// 3. Write .stats last  - commit marker
+	statsPath := filepath.Join(dirPath, ".stats")
+	statsContent := fmt.Sprintf("minKey=%s\nmaxKey=%s\nsize=%d\nseq=%d\n",
+		Base62Encode(minKey),
+		Base62Encode(maxKey),
+		sizeInBytes,
+		seq,
+	)
+	if err := writeAndSync(statsPath, []byte(statsContent)); err != nil {
+		return fmt.Errorf("write sstable: stats: %w", err)
 	}
 
-	// Fsync to disk
-	if err := f.Sync(); err != nil {
-		return fmt.Errorf("write sstable: fsync: %w", err)
-	}
-
-	// Update manifest in memory: prepend (newest first)
+	// Update in-memory state: prepend (newest first)
 	sstable := SSTable{
-		PathRef:     path,
+		PathRef:     dirPath,
 		MinKey:      minKey,
 		MaxKey:      maxKey,
 		CreationSeq: seq,
 		SizeInBytes: sizeInBytes,
 		BF:          bf,
 	}
-	lsm.manifest.orderedTableRefs = append([]SSTable{sstable}, lsm.manifest.orderedTableRefs...)
-
-	// Append SSTable entry to manifest file
-	if err := lsm.persistManifest(sstable); err != nil {
-		return fmt.Errorf("write sstable: update manifest: %w", err)
-	}
+	lsm.levels[level] = append([]SSTable{sstable}, lsm.levels[level]...)
 
 	return nil
+}
+
+// writeAndSync creates a file, writes data, fsyncs, and closes.
+func writeAndSync(path string, data []byte) error {
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	if _, err := f.Write(data); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return err
+	}
+	return f.Close()
 }
 
 // Flush persists the current memtable on disk
@@ -348,7 +400,7 @@ func (lsm *LSM) Flush() error {
 	lsm.immutableMemTable.Store(old)
 	lsm.memTable.Store(NewSkipList())
 
-	if err := lsm.writeSkipListToSSTable(old); err != nil {
+	if err := lsm.writeSkipListToSSTable(old, 0); err != nil {
 		return err
 	}
 
@@ -382,42 +434,13 @@ func (lsm *LSM) RecoverExistingWALs() error {
 	}
 
 	// 3. write skiplist to SSTable (fsync + manifest update)
-	if err := lsm.writeSkipListToSSTable(sl); err != nil {
+	if err := lsm.writeSkipListToSSTable(sl, 0); err != nil {
 		return fmt.Errorf("recovery: %w", err)
 	}
 
-	// 4. delete old WAL files — data is now durable in SSTable
+	// 4. delete old WAL files  - data is now durable in SSTable
 	if err := lsm.wal.deleteFiles(paths); err != nil {
 		return fmt.Errorf("recovery: %w", err)
-	}
-
-	return nil
-}
-
-// persistManifest appends one SSTable entry to the manifest file
-func (lsm *LSM) persistManifest(sst SSTable) error {
-	path := filepath.Join(lsm.manifest.rootPath, manifestFile)
-
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0644)
-	if err != nil {
-		return fmt.Errorf("open manifest: %w", err)
-	}
-	defer f.Close()
-
-	line := fmt.Sprintf("%s,seq=%d,size=%d,minKey=%s,maxKey=%s\n",
-		filepath.Base(sst.PathRef),
-		sst.CreationSeq,
-		sst.SizeInBytes,
-		Base62Encode(sst.MinKey),
-		Base62Encode(sst.MaxKey),
-	)
-
-	if _, err := f.WriteString(line); err != nil {
-		return fmt.Errorf("write manifest entry: %w", err)
-	}
-
-	if err := f.Sync(); err != nil {
-		return fmt.Errorf("fsync manifest: %w", err)
 	}
 
 	return nil
@@ -471,7 +494,7 @@ func (lsm *LSM) Compact() {
 						fmt.Println("compactor panicked:", r)
 					}
 				}()
-				lsm.mergeSSTables()
+				lsm.mergeSSTablesAcrossAllLevels()
 			}()
 		case <-lsm.done:
 			lsm.compactTicker.Stop()
@@ -482,8 +505,164 @@ func (lsm *LSM) Compact() {
 	}
 }
 
-func (lsm *LSM) mergeSSTables() {
-	if len(lsm.levels[0]) > 100 { // if the number of ss tables in level 0 is greater than 100
+func (lsm *LSM) mergeSSTablesAcrossAllLevels() {
+	caps := [numLevels]int{capL0, capL1, capL2, capL3}
 
+	for level := 0; level < numLevels-1; level++ {
+		if len(lsm.levels[level]) <= caps[level] {
+			continue
+		}
+
+		targetLevel := level + 1
+
+		for _, sourceTable := range lsm.levels[level] {
+			overlapping := findOverlapping(sourceTable, lsm.levels[targetLevel])
+			sources := append([]SSTable{sourceTable}, overlapping...)
+
+			newTables, err := lsm.mergeAndPersist(sources, targetLevel)
+			if err != nil {
+				fmt.Printf("compaction L%d→L%d failed: %v\n", level, targetLevel, err)
+				return
+			}
+
+			// delete old source SSTables from disk
+			for _, sst := range sources {
+				os.RemoveAll(sst.PathRef)
+			}
+
+			// rebuild source level: remove the source table
+			lsm.levels[level] = removeSSTable(lsm.levels[level], sourceTable)
+
+			// rebuild target level: remove overlapping, add new
+			for _, sst := range overlapping {
+				lsm.levels[targetLevel] = removeSSTable(lsm.levels[targetLevel], sst)
+			}
+			lsm.levels[targetLevel] = append(newTables, lsm.levels[targetLevel]...)
+		}
 	}
+}
+
+// removeSSTable removes an SSTable from a slice by PathRef.
+func removeSSTable(tables []SSTable, target SSTable) []SSTable {
+	var result []SSTable
+	for _, t := range tables {
+		if t.PathRef != target.PathRef {
+			result = append(result, t)
+		}
+	}
+	return result
+}
+
+// findOverlapping returns all SSTables in the target level whose key range overlaps with the source SSTable.
+func findOverlapping(source SSTable, level []SSTable) []SSTable {
+	var result []SSTable
+	for _, table := range level {
+		if bytes.Compare(source.MaxKey, table.MinKey) >= 0 && bytes.Compare(source.MinKey, table.MaxKey) <= 0 {
+			result = append(result, table)
+		}
+	}
+	return result
+}
+
+// readAllEntries reads all KV entries from an SSTable file, skipping the bloom filter header.
+func readAllEntries(sstableDir string) ([]KVEntry, error) {
+	dataPath := filepath.Join(sstableDir, ".data")
+	f, err := os.Open(dataPath)
+	if err != nil {
+		return nil, fmt.Errorf("read sstable: open %s: %w", dataPath, err)
+	}
+	defer f.Close()
+
+	r := bufio.NewReader(f)
+
+	var entries []KVEntry
+	for {
+		entry, err := ReadKVEntry(r)
+		if err != nil {
+			return nil, fmt.Errorf("read sstable: %s: %w", dataPath, err)
+		}
+		if entry == nil {
+			break
+		}
+		entries = append(entries, *entry)
+	}
+	return entries, nil
+}
+
+// mergeEntries merge-sorts entries from multiple SSTables.
+// Entries are already sorted within each SSTable. For duplicate keys, the entry
+// from the earlier source (lower index) wins  - callers must pass sources with
+// newest SSTable first. At the final level, tombstones are dropped.
+func mergeEntries(sources [][]KVEntry, isFinalLevel bool) []KVEntry {
+	// flatten all entries
+	var all []KVEntry
+	for _, entries := range sources {
+		all = append(all, entries...)
+	}
+
+	// sort by key
+	sort.Slice(all, func(i, j int) bool {
+		return bytes.Compare(all[i].Key, all[j].Key) < 0
+	})
+
+	// deduplicate: for runs of the same key, keep the first occurrence.
+	// since the source SSTable (newest) is listed first in the input,
+	// and sort is stable for equal keys in insertion order, the first
+	// occurrence is the newest version.
+	var merged []KVEntry
+	for i, entry := range all {
+		if i > 0 && bytes.Equal(entry.Key, all[i-1].Key) {
+			continue // duplicate key, skip older version
+		}
+		// at the final level, drop tombstones  - no deeper level to propagate to
+		if isFinalLevel && entry.Tombstone == 1 {
+			continue
+		}
+		merged = append(merged, entry)
+	}
+
+	return merged
+}
+
+// mergeAndPersist merges the given SSTables via merge-sort, writes new non-overlapping SSTables
+// to the target level directory, and returns the new SSTables.
+// At the final level (L3), tombstones are dropped.
+func (lsm *LSM) mergeAndPersist(sources []SSTable, targetLevel int) ([]SSTable, error) {
+	// 1. read all entries from source SSTables (newest first)
+	allSources := make([][]KVEntry, len(sources))
+	for i, sst := range sources {
+		entries, err := readAllEntries(sst.PathRef)
+		if err != nil {
+			return nil, err
+		}
+		allSources[i] = entries
+	}
+
+	// 2. merge-sort and deduplicate
+	isFinalLevel := targetLevel == 3
+	merged := mergeEntries(allSources, isFinalLevel)
+
+	if len(merged) == 0 {
+		return nil, nil
+	}
+
+	// 3. build a skiplist from merged entries and write as SSTable
+	// reuses writeSkipListToSSTable which handles bloom filter, fsync, manifest
+	sl := NewSkipList()
+	for _, entry := range merged {
+		if entry.Tombstone == 1 {
+			sl.InsertWithTombstone(entry.Key)
+		} else {
+			sl.Insert(entry.Key, entry.Val)
+		}
+	}
+
+	if err := lsm.writeSkipListToSSTable(sl, targetLevel); err != nil {
+		return nil, fmt.Errorf("compaction: write merged sstable: %w", err)
+	}
+
+	// the new SSTable was prepended to lsm.levels[targetLevel] by writeSkipListToSSTable
+	newSST := lsm.levels[targetLevel][0]
+
+	return []SSTable{newSST}, nil
 }
