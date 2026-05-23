@@ -15,6 +15,7 @@ import (
 	"github.com/chorus/scheduler/core"
 	"github.com/chorus/scheduler/job"
 	"github.com/chorus/storage"
+	"github.com/chorus/storage/lsm"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -32,7 +33,7 @@ type Node struct {
 
 	peers     *cluster.PeerList
 	ring      *ring.Ring
-	lsm       *storage.LSM
+	store     storage.Store
 	scheduler *core.Scheduler
 
 	mu        sync.RWMutex
@@ -42,11 +43,11 @@ type Node struct {
 	conns  map[string]*grpc.ClientConn // addr -> persistent connection
 }
 
-func NewNode(id, port string, seeds []string) *Node {
+func NewLSMBasedNode(id, port string, seeds []string) *Node {
 	addr := "localhost:" + port
 
 	dataDir := filepath.Join("data", "nodes", id)
-	lsm, err := storage.NewLSM(dataDir)
+	lsm, err := lsm.NewLSM(dataDir)
 	if err != nil {
 		log.Fatalf("Failed to init LSM: %v", err)
 	}
@@ -57,7 +58,7 @@ func NewNode(id, port string, seeds []string) *Node {
 		Addr:      addr,
 		peers:     cluster.NewPeerList(id, addr),
 		ring:      ring.New(),
-		lsm:       lsm,
+		store:     lsm,
 		heartbeat: 0,
 		conns:     make(map[string]*grpc.ClientConn),
 	}
@@ -102,7 +103,6 @@ func (n *Node) incrementHeartbeat() int64 {
 	n.heartbeat++
 	return n.heartbeat
 }
-
 
 // getPeerInfosWithSelf returns all known peers plus self as PeerInfo slice.
 func (n *Node) getPeerInfosWithSelf() []cluster.PeerInfo {
@@ -281,7 +281,7 @@ func (n *Node) Put(ctx context.Context, req *pb.PutRequest) (*pb.PutResponse, er
 	}
 
 	// All replicas succeeded - store locally via LSM
-	if err := n.lsm.Insert([]byte(req.Key), req.Value); err != nil {
+	if err := n.store.Insert([]byte(req.Key), req.Value); err != nil {
 		return nil, err
 	}
 
@@ -343,7 +343,7 @@ func (n *Node) Get(ctx context.Context, req *pb.GetRequest) (*pb.GetResponse, er
 	}
 
 	// We own it - look up via LSM
-	value, err := n.lsm.Get([]byte(req.Key))
+	value, err := n.store.Get([]byte(req.Key))
 	if err != nil {
 		return nil, err
 	}
@@ -358,7 +358,7 @@ func (n *Node) Get(ctx context.Context, req *pb.GetRequest) (*pb.GetResponse, er
 
 // Replicate RPC - stores a value directly without ownership check (used by primary)
 func (n *Node) Replicate(ctx context.Context, req *pb.ReplicateRequest) (*pb.ReplicateResponse, error) {
-	if err := n.lsm.Insert([]byte(req.Key), req.Value); err != nil {
+	if err := n.store.Insert([]byte(req.Key), req.Value); err != nil {
 		return nil, err
 	}
 

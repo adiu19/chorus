@@ -23,7 +23,7 @@ func main() {
 		log.Fatalf("Failed to load config: %v", err)
 	}
 
-	n := node.NewNode(getEnv("NODE_ID", "node1"), getEnv("PORT", "8010"), cfg.Seeds)
+	n := node.NewLSMBasedNode(getEnv("NODE_ID", "node1"), getEnv("PORT", "8010"), cfg.Seeds)
 
 	lis, err := net.Listen("tcp", ":"+n.Port)
 	if err != nil {
