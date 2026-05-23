@@ -16,6 +16,7 @@ import (
 	"github.com/chorus/scheduler/job"
 	"github.com/chorus/storage"
 	"github.com/chorus/storage/lsm"
+	"github.com/chorus/storage/memstore"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -43,14 +44,27 @@ type Node struct {
 	conns  map[string]*grpc.ClientConn // addr -> persistent connection
 }
 
-func NewLSMBasedNode(id, port string, seeds []string) *Node {
-	addr := "localhost:" + port
+func NewMemStoreBasedNode(id, port string, seeds []string) *Node {
+	mem, err := memstore.NewMemStore()
+	if err != nil {
+		log.Fatalf("failed to init memstore %v", err)
+	}
 
+	return newNode(id, port, seeds, mem)
+}
+
+func NewLSMBasedNode(id, port string, seeds []string) *Node {
 	dataDir := filepath.Join("data", "nodes", id)
 	lsm, err := lsm.NewLSM(dataDir)
 	if err != nil {
 		log.Fatalf("Failed to init LSM: %v", err)
 	}
+
+	return newNode(id, port, seeds, lsm)
+}
+
+func newNode(id, port string, seeds []string, store storage.Store) *Node {
+	addr := "localhost:" + port
 
 	node := &Node{
 		ID:        id,
@@ -58,7 +72,7 @@ func NewLSMBasedNode(id, port string, seeds []string) *Node {
 		Addr:      addr,
 		peers:     cluster.NewPeerList(id, addr),
 		ring:      ring.New(),
-		store:     lsm,
+		store:     store,
 		heartbeat: 0,
 		conns:     make(map[string]*grpc.ClientConn),
 	}

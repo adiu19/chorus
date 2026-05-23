@@ -11,10 +11,10 @@ type MemStore struct {
 }
 
 // NewMemStore instantiates our in-memory store
-func NewMemStore() *MemStore {
+func NewMemStore() (*MemStore, error) {
 	return &MemStore{
 		m: make(map[string][]byte),
-	}
+	}, nil
 }
 
 // Insert adds a new KV to the store
