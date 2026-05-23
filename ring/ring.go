@@ -23,14 +23,16 @@ type virtualNode struct {
 // Ring encapsulates info on the hash ring we're maintaining
 type Ring struct {
 	mu          sync.RWMutex
-	ring        []virtualNode // sorted by position
-	Fingerprint uint32        // hash of sorted node IDs - same fingerprint = same membership
+	ring        []virtualNode    // sorted by position
+	Fingerprint uint32           // hash of sorted node IDs - same fingerprint = same membership
+	fn          func([]byte) int // hash function that can be provided at ring init
 }
 
 // New inits a new ring
-func New() *Ring {
+func New(fn func([]byte) int) *Ring {
 	return &Ring{
 		ring: []virtualNode{},
+		fn:   fn,
 	}
 }
 
@@ -51,7 +53,7 @@ func (r *Ring) Rebalance(nodes []string) {
 
 	for _, node := range nodes {
 		for i := 0; i < NumVirtualNodes; i++ {
-			position := hash(fmt.Sprintf("%s-%d", node, i))
+			position := r.fn([]byte(fmt.Sprintf("%s-%d", node, i)))
 			r.ring = append(r.ring, virtualNode{position: position, node: node})
 		}
 	}
@@ -70,7 +72,7 @@ func (r *Ring) GetNode(requestID string) (string, error) {
 		return "", ErrEmptyRing
 	}
 
-	position := hash(requestID)
+	position := r.fn([]byte(requestID))
 
 	// binary search for first node with position >= hash
 	idx := sort.Search(len(r.ring), func(i int) bool {
@@ -95,7 +97,7 @@ func (r *Ring) GetNodes(key string, n int) ([]string, error) {
 		return nil, ErrEmptyRing
 	}
 
-	position := hash(key)
+	position := r.fn([]byte(key))
 
 	// binary search for first node with position >= hash
 	idx := sort.Search(len(r.ring), func(i int) bool {
@@ -126,8 +128,4 @@ func (r *Ring) GetNodes(key string, n int) ([]string, error) {
 	}
 
 	return nodes, nil
-}
-
-func hash(key string) int {
-	return int(crc32.ChecksumIEEE([]byte(key)))
 }

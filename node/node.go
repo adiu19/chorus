@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/chorus/cluster"
+	"github.com/chorus/hashes"
 	pb "github.com/chorus/proto"
 	"github.com/chorus/ring"
 	"github.com/chorus/scheduler/core"
@@ -74,7 +75,7 @@ func newNode(id, port string, seeds []string, store storage.Store) *Node {
 		Port:      port,
 		Addr:      addr,
 		peers:     cluster.NewPeerList(id, addr),
-		ring:      ring.New(),
+		ring:      ring.New(hashes.HashViaCRC32),
 		store:     store,
 		heartbeat: 0,
 		conns:     make(map[string]*grpc.ClientConn),
