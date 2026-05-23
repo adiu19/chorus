@@ -26,6 +26,7 @@ import (
 // ReplicationFactor is the number of nodes that store each key
 const ReplicationFactor = 3
 
+// Node encapsulates a chorus node
 type Node struct {
 	pb.UnimplementedNodeServiceServer
 	ID   string
@@ -44,6 +45,7 @@ type Node struct {
 	conns  map[string]*grpc.ClientConn // addr -> persistent connection
 }
 
+// NewMemStoreBasedNode inits a new chorus node with memstore as the backing store
 func NewMemStoreBasedNode(id, port string, seeds []string) *Node {
 	mem, err := memstore.NewMemStore()
 	if err != nil {
@@ -53,6 +55,7 @@ func NewMemStoreBasedNode(id, port string, seeds []string) *Node {
 	return newNode(id, port, seeds, mem)
 }
 
+// NewLSMBasedNode inits a new chorus node with lsm as the backing store
 func NewLSMBasedNode(id, port string, seeds []string) *Node {
 	dataDir := filepath.Join("data", "nodes", id)
 	lsm, err := lsm.NewLSM(dataDir)
