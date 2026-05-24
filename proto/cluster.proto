@@ -1,0 +1,40 @@
+syntax = "proto3";
+
+package node;
+
+option go_package = "./proto";
+
+service ClusterService {
+  rpc Ping(PingRequest) returns (PingResponse);
+  rpc Echo(EchoRequest) returns (EchoResponse);
+}
+
+message PeerInfo {
+  string id = 1;
+  string addr = 2;
+  int64 heartbeat = 3;
+  map<string, string> services = 4;
+}
+
+message PingRequest {
+  string node_id = 1;
+  repeated PeerInfo peers = 2;
+}
+
+message PingResponse {
+  string node_id = 1;
+  int64 timestamp = 2;
+  repeated PeerInfo peers = 3;
+}
+
+message EchoRequest {
+  string node_id = 1;
+  string message = 2;
+  int32 hop_count = 3;
+}
+
+message EchoResponse {
+  string node_id = 1;
+  string message = 2;
+  int32 hop_count = 3;
+}

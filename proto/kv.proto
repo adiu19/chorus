@@ -1,0 +1,60 @@
+syntax = "proto3";
+
+package node;
+
+option go_package = "./proto";
+
+service KVService {
+  rpc Fetch(FetchRequest) returns (FetchResponse);
+  rpc Put(PutRequest) returns (PutResponse);
+  rpc Get(GetRequest) returns (GetResponse);
+  rpc Replicate(ReplicateRequest) returns (ReplicateResponse);
+}
+
+message FetchRequest {
+  string key = 1;
+}
+
+message FetchResponse {
+  string owner_id = 1;
+  string owner_addr = 2;
+  uint32 ring_fingerprint = 3;
+}
+
+message PutRequest {
+  string key = 1;
+  bytes value = 2;
+}
+
+message PutResponse {
+  bool stored = 1;
+  string owner_id = 2;
+  string owner_addr = 3;
+  repeated ReplicaStatus replica_status = 4;
+}
+
+message ReplicaStatus {
+  string node_id = 1;
+  bool success = 2;
+  string error = 3;
+}
+
+message ReplicateRequest {
+  string key = 1;
+  bytes value = 2;
+}
+
+message ReplicateResponse {
+  bool stored = 1;
+}
+
+message GetRequest {
+  string key = 1;
+}
+
+message GetResponse {
+  bool found = 1;
+  bytes value = 2;
+  string owner_id = 3;
+  string owner_addr = 4;
+}

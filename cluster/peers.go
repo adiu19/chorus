@@ -11,6 +11,7 @@ type PeerInfo struct {
 	ID        string
 	Addr      string
 	Heartbeat int64
+	Services  map[string]string
 }
 
 // Peer represents a known node in the cluster.
@@ -20,6 +21,7 @@ type Peer struct {
 	Heartbeat  int64  // the node's heartbeat counter
 	StaleCount int    // cycles since heartbeat changed
 	IsAlive    bool
+	Services   map[string]string
 }
 
 // PeerList manages the set of known peers in the cluster.
@@ -54,6 +56,7 @@ func (pl *PeerList) AddSeedAddr(addr string) {
 			Heartbeat:  0,
 			StaleCount: 0,
 			IsAlive:    true,
+			Services:   map[string]string{},
 		}
 	}
 }
@@ -74,9 +77,21 @@ func (pl *PeerList) GetPeerInfos() []PeerInfo {
 			ID:        p.ID,
 			Addr:      p.Addr,
 			Heartbeat: p.Heartbeat,
+			Services:  copyServices(p.Services),
 		})
 	}
 	return result
+}
+
+func copyServices(m map[string]string) map[string]string {
+	if m == nil {
+		return nil
+	}
+	out := make(map[string]string, len(m))
+	for k, v := range m {
+		out[k] = v
+	}
+	return out
 }
 
 // MergePeers merges incoming peer infos with local state.
@@ -113,6 +128,7 @@ func (pl *PeerList) MergePeers(incoming []PeerInfo) ([]PeerInfo, bool) {
 				Heartbeat:  info.Heartbeat,
 				StaleCount: 0,
 				IsAlive:    true,
+				Services:   copyServices(info.Services),
 			}
 			newPeerDiscovered = true
 		} else {
@@ -125,6 +141,9 @@ func (pl *PeerList) MergePeers(incoming []PeerInfo) ([]PeerInfo, bool) {
 				p.Heartbeat = info.Heartbeat
 				p.StaleCount = 0
 				p.IsAlive = true
+				if info.Services != nil {
+					p.Services = copyServices(info.Services)
+				}
 			}
 		}
 	}
@@ -139,10 +158,41 @@ func (pl *PeerList) MergePeers(incoming []PeerInfo) ([]PeerInfo, bool) {
 			ID:        p.ID,
 			Addr:      p.Addr,
 			Heartbeat: p.Heartbeat,
+			Services:  copyServices(p.Services),
 		})
 	}
 
 	return result, newPeerDiscovered
+}
+
+// GetByService returns alive peers that advertise the given service.
+func (pl *PeerList) GetByService(name string) []Peer {
+	pl.mu.RLock()
+	defer pl.mu.RUnlock()
+
+	result := make([]Peer, 0)
+	for _, p := range pl.peers {
+		if !p.IsAlive || p.ID == p.Addr {
+			continue
+		}
+		if _, ok := p.Services[name]; ok {
+			result = append(result, *p)
+		}
+	}
+	return result
+}
+
+// GetServiceAddr returns the address of the given service on the given peer.
+func (pl *PeerList) GetServiceAddr(id, service string) string {
+	pl.mu.RLock()
+	defer pl.mu.RUnlock()
+
+	if p, exists := pl.peers[id]; exists {
+		if addr, ok := p.Services[service]; ok {
+			return addr
+		}
+	}
+	return ""
 }
 
 // ProcessResponse processes a ping response, updating stale counts.

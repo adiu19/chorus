@@ -2,650 +2,142 @@ package node
 
 import (
 	"context"
-	"fmt"
 	"log"
-	"math/rand"
+	"net"
 	"path/filepath"
-	"sync"
 	"time"
 
 	"github.com/chorus/cluster"
-	"github.com/chorus/hashes"
+	"github.com/chorus/kvcluster"
 	pb "github.com/chorus/proto"
-	"github.com/chorus/ring"
 	"github.com/chorus/scheduler/core"
-	"github.com/chorus/scheduler/job"
 	"github.com/chorus/storage"
 	"github.com/chorus/storage/lsm"
 	"github.com/chorus/storage/memstore"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/status"
+	"google.golang.org/grpc/reflection"
 )
 
-// ReplicationFactor is the number of nodes that store each key
-const ReplicationFactor = 3
+type StoreKind int
 
-// Node encapsulates a chorus node
+const (
+	StoreMem StoreKind = iota
+	StoreLSM
+)
+
+type KVClusterConfig struct {
+	Store    StoreKind
+	DataPath string
+}
+
+type SchedulerConfig struct {
+	CapacityPerWorker int
+	TickInterval      time.Duration
+	MaxPendingJobs    int
+}
+
+type Config struct {
+	ID    string
+	Port  string
+	Seeds []string
+
+	GossipInterval time.Duration
+
+	KV        *KVClusterConfig
+	Scheduler *SchedulerConfig
+}
+
 type Node struct {
-	pb.UnimplementedNodeServiceServer
-	ID   string
-	Port string
-	Addr string // "localhost:port" - this node's address
+	Config Config
+	Addr   string
 
-	peers     *cluster.PeerList
-	ring      *ring.Ring
-	store     storage.Store
-	scheduler *core.Scheduler
+	Cluster   *cluster.Server
+	KV        *kvcluster.KVCluster
+	Scheduler *core.Scheduler
+	SchedSrv  *core.Server
 
-	mu        sync.RWMutex
-	heartbeat int64 // this node's heartbeat counter, only we increment this
-
-	connMu sync.RWMutex
-	conns  map[string]*grpc.ClientConn // addr -> persistent connection
+	grpcSrv *grpc.Server
 }
 
-// NewMemStoreBasedNode inits a new chorus node with memstore as the backing store
-func NewMemStoreBasedNode(id, port string, seeds []string) *Node {
-	mem, err := memstore.NewMemStore()
-	if err != nil {
-		log.Fatalf("failed to init memstore %v", err)
+func New(cfg Config) *Node {
+	addr := "localhost:" + cfg.Port
+
+	n := &Node{
+		Config: cfg,
+		Addr:   addr,
 	}
 
-	return newNode(id, port, seeds, mem)
-}
+	n.Cluster = cluster.NewServer(cfg.ID, addr, cfg.Seeds)
 
-// NewLSMBasedNode inits a new chorus node with lsm as the backing store
-func NewLSMBasedNode(id, port string, seeds []string) *Node {
-	dataDir := filepath.Join("data", "nodes", id)
-	lsm, err := lsm.NewLSM(dataDir)
-	if err != nil {
-		log.Fatalf("Failed to init LSM: %v", err)
-	}
-
-	return newNode(id, port, seeds, lsm)
-}
-
-func newNode(id, port string, seeds []string, store storage.Store) *Node {
-	addr := "localhost:" + port
-
-	node := &Node{
-		ID:        id,
-		Port:      port,
-		Addr:      addr,
-		peers:     cluster.NewPeerList(id, addr),
-		ring:      ring.New(hashes.HashViaCRC32),
-		store:     store,
-		heartbeat: 0,
-		conns:     make(map[string]*grpc.ClientConn),
-	}
-
-	// Add seeds (we don't know their IDs yet, use address as temp ID)
-	// Skip our own address
-	for _, seedAddr := range seeds {
-		if seedAddr != addr {
-			node.peers.AddSeedAddr(seedAddr)
+	if cfg.KV != nil {
+		store, err := buildStore(cfg.KV.Store, cfg.KV.DataPath, cfg.ID)
+		if err != nil {
+			log.Fatalf("[%s] Failed to init kv store: %v", cfg.ID, err)
 		}
+		n.KV = kvcluster.New(n.Cluster, addr, store)
 	}
 
-	// Initialize scheduler
-	node.scheduler = core.New(core.Config{
-		CapacityPerWorker: 10,
-		TickInterval:      500 * time.Millisecond,
-		MaxPendingJobs:    1000,
-	})
-	node.scheduler.Start()
-
-	// Initial ring with just ourselves
-	node.ring.Rebalance([]string{id})
-
-	log.Printf("[%s] Node starting on :%s", node.ID, node.Port)
-	log.Printf("[%s] Initial seeds: %v", node.ID, seeds)
-	log.Printf("[%s] Ring fingerprint: %08x", node.ID, node.ring.Fingerprint)
-
-	return node
-}
-
-// getHeartbeat returns this node's current heartbeat.
-func (n *Node) getHeartbeat() int64 {
-	n.mu.RLock()
-	defer n.mu.RUnlock()
-	return n.heartbeat
-}
-
-// incrementHeartbeat increments this node's heartbeat counter.
-func (n *Node) incrementHeartbeat() int64 {
-	n.mu.Lock()
-	defer n.mu.Unlock()
-	n.heartbeat++
-	return n.heartbeat
-}
-
-// getPeerInfosWithSelf returns all known peers plus self as PeerInfo slice.
-func (n *Node) getPeerInfosWithSelf() []cluster.PeerInfo {
-	infos := n.peers.GetPeerInfos()
-	// Add self
-	infos = append(infos, cluster.PeerInfo{
-		ID:        n.ID,
-		Addr:      n.Addr,
-		Heartbeat: n.getHeartbeat(),
-	})
-	return infos
-}
-
-// toProtoPeers converts cluster.PeerInfo slice to proto PeerInfo slice.
-func toProtoPeers(infos []cluster.PeerInfo) []*pb.PeerInfo {
-	result := make([]*pb.PeerInfo, len(infos))
-	for i, info := range infos {
-		result[i] = &pb.PeerInfo{
-			Id:        info.ID,
-			Addr:      info.Addr,
-			Heartbeat: info.Heartbeat,
-		}
-	}
-	return result
-}
-
-// fromProtoPeers converts proto PeerInfo slice to cluster.PeerInfo slice.
-func fromProtoPeers(peers []*pb.PeerInfo) []cluster.PeerInfo {
-	result := make([]cluster.PeerInfo, len(peers))
-	for i, p := range peers {
-		result[i] = cluster.PeerInfo{
-			ID:        p.Id,
-			Addr:      p.Addr,
-			Heartbeat: p.Heartbeat,
-		}
-	}
-	return result
-}
-
-// maybeRebalanceRing rebalances the ring if membership changed.
-func (n *Node) maybeRebalanceRing() {
-	// Get alive peer IDs + self
-	aliveIDs := n.peers.GetAliveIDs()
-
-	// Add self if not already included
-	hasSelf := false
-	for _, id := range aliveIDs {
-		if id == n.ID {
-			hasSelf = true
-			break
-		}
-	}
-	if !hasSelf {
-		aliveIDs = append(aliveIDs, n.ID)
-	}
-
-	// Rebalance
-	n.ring.Rebalance(aliveIDs)
-	log.Printf("[%s] Ring rebalanced, fingerprint: %08x, nodes: %v", n.ID, n.ring.Fingerprint, aliveIDs)
-}
-
-// Ping RPC - exchanges peer info for gossip
-func (n *Node) Ping(ctx context.Context, req *pb.PingRequest) (*pb.PingResponse, error) {
-	log.Printf("[%s] Received Ping from %s with %d nodes", n.ID, req.NodeId, len(req.Peers))
-
-	// Convert and merge incoming peers
-	incoming := fromProtoPeers(req.Peers)
-	merged, newPeerDiscovered := n.peers.MergePeers(incoming)
-
-	// Add self to merged
-	merged = append(merged, cluster.PeerInfo{
-		ID:        n.ID,
-		Addr:      n.Addr,
-		Heartbeat: n.getHeartbeat(),
-	})
-
-	// Rebalance ring if new peer discovered
-	if newPeerDiscovered {
-		n.maybeRebalanceRing()
-	}
-
-	return &pb.PingResponse{
-		NodeId:    n.ID,
-		Timestamp: time.Now().Unix(),
-		Peers:     toProtoPeers(merged),
-	}, nil
-}
-
-// Fetch RPC - returns the owner of a key
-func (n *Node) Fetch(ctx context.Context, req *pb.FetchRequest) (*pb.FetchResponse, error) {
-	ownerID, err := n.ring.GetNode(req.Key)
-	if err != nil {
-		return nil, err
-	}
-
-	ownerAddr := n.peers.GetAddress(ownerID)
-	if ownerID == n.ID {
-		ownerAddr = n.Addr
-	}
-
-	log.Printf("[%s] Fetch key=%s, owner=%s", n.ID, req.Key, ownerID)
-
-	return &pb.FetchResponse{
-		OwnerId:         ownerID,
-		OwnerAddr:       ownerAddr,
-		RingFingerprint: n.ring.Fingerprint,
-	}, nil
-}
-
-// Put RPC - stores a value if this node is primary, replicates to other nodes
-func (n *Node) Put(ctx context.Context, req *pb.PutRequest) (*pb.PutResponse, error) {
-	// Get all replica nodes for this key
-	replicas, err := n.ring.GetNodes(req.Key, ReplicationFactor)
-	if err != nil {
-		return nil, err
-	}
-
-	// Primary is the first node in the replica list
-	primaryID := replicas[0]
-
-	// Check if we're the primary
-	if primaryID != n.ID {
-		primaryAddr := n.peers.GetAddress(primaryID)
-		log.Printf("[%s] Put key=%s redirect to primary %s", n.ID, req.Key, primaryID)
-		return &pb.PutResponse{
-			Stored:    false,
-			OwnerId:   primaryID,
-			OwnerAddr: primaryAddr,
-		}, nil
-	}
-
-	// We're the primary - replicate to other nodes first
-	log.Printf("[%s] Put key=%s - I'm primary, replicas: %v", n.ID, req.Key, replicas)
-
-	replicaStatuses := make([]*pb.ReplicaStatus, 0, len(replicas))
-	allSuccess := true
-
-	// Replicate to secondary nodes in parallel
-	if len(replicas) > 1 {
-		type replicaResult struct {
-			nodeID  string
-			success bool
-			err     string
-		}
-
-		results := make(chan replicaResult, len(replicas)-1)
-
-		for _, replicaID := range replicas[1:] {
-			go func(nodeID string) {
-				success, errMsg := n.replicateToNode(ctx, nodeID, req.Key, req.Value)
-				results <- replicaResult{nodeID: nodeID, success: success, err: errMsg}
-			}(replicaID)
-		}
-
-		// Collect results
-		for i := 0; i < len(replicas)-1; i++ {
-			result := <-results
-			replicaStatuses = append(replicaStatuses, &pb.ReplicaStatus{
-				NodeId:  result.nodeID,
-				Success: result.success,
-				Error:   result.err,
-			})
-			if !result.success {
-				allSuccess = false
-			}
-		}
-	}
-
-	// Only store locally if all replicas succeeded (write-all-N semantics)
-	if !allSuccess {
-		log.Printf("[%s] Put key=%s failed - not all replicas acknowledged", n.ID, req.Key)
-		return &pb.PutResponse{
-			Stored:        false,
-			ReplicaStatus: replicaStatuses,
-		}, nil
-	}
-
-	// All replicas succeeded - store locally via LSM
-	if err := n.store.Insert([]byte(req.Key), req.Value); err != nil {
-		return nil, err
-	}
-
-	// Add self to replica status
-	replicaStatuses = append([]*pb.ReplicaStatus{{
-		NodeId:  n.ID,
-		Success: true,
-	}}, replicaStatuses...)
-
-	log.Printf("[%s] Put key=%s stored on all %d replicas", n.ID, req.Key, len(replicas))
-
-	return &pb.PutResponse{
-		Stored:        true,
-		ReplicaStatus: replicaStatuses,
-	}, nil
-}
-
-// replicateToNode sends a Replicate RPC to a specific node
-func (n *Node) replicateToNode(ctx context.Context, nodeID, key string, value []byte) (bool, string) {
-	addr := n.peers.GetAddress(nodeID)
-	if addr == "" {
-		return false, "unknown node address"
-	}
-
-	conn, err := n.getConn(addr)
-	if err != nil {
-		return false, fmt.Sprintf("connection failed: %v", err)
-	}
-
-	client := pb.NewNodeServiceClient(conn)
-
-	resp, err := client.Replicate(ctx, &pb.ReplicateRequest{
-		Key:   key,
-		Value: value,
-	})
-	if err != nil {
-		return false, fmt.Sprintf("replicate RPC failed: %v", err)
-	}
-
-	return resp.Stored, ""
-}
-
-// Get RPC - retrieves a value if this node owns the key, otherwise returns redirect info
-func (n *Node) Get(ctx context.Context, req *pb.GetRequest) (*pb.GetResponse, error) {
-	ownerID, err := n.ring.GetNode(req.Key)
-	if err != nil {
-		return nil, err
-	}
-
-	// Check if we own this key
-	if ownerID != n.ID {
-		ownerAddr := n.peers.GetAddress(ownerID)
-		log.Printf("[%s] Get key=%s redirect to %s", n.ID, req.Key, ownerID)
-		return &pb.GetResponse{
-			Found:     false,
-			OwnerId:   ownerID,
-			OwnerAddr: ownerAddr,
-		}, nil
-	}
-
-	// We own it - look up via LSM
-	value, err := n.store.Get([]byte(req.Key))
-	if err != nil {
-		return nil, err
-	}
-
-	log.Printf("[%s] Get key=%s found=%v", n.ID, req.Key, value != nil)
-
-	return &pb.GetResponse{
-		Found: value != nil,
-		Value: value,
-	}, nil
-}
-
-// Replicate RPC - stores a value directly without ownership check (used by primary)
-func (n *Node) Replicate(ctx context.Context, req *pb.ReplicateRequest) (*pb.ReplicateResponse, error) {
-	if err := n.store.Insert([]byte(req.Key), req.Value); err != nil {
-		return nil, err
-	}
-
-	log.Printf("[%s] Replicate key=%s", n.ID, req.Key)
-
-	return &pb.ReplicateResponse{
-		Stored: true,
-	}, nil
-}
-
-// Echo RPC
-func (n *Node) Echo(ctx context.Context, req *pb.EchoRequest) (*pb.EchoResponse, error) {
-	log.Printf("[%s] Received Echo from %s: '%s' (hop %d)",
-		n.ID, req.NodeId, req.Message, req.HopCount)
-
-	return &pb.EchoResponse{
-		NodeId:   n.ID,
-		Message:  fmt.Sprintf("echo from %s: %s", n.ID, req.Message),
-		HopCount: req.HopCount + 1,
-	}, nil
-}
-
-// SubmitJob RPC - validates and enqueues a job for scheduling
-func (n *Node) SubmitJob(ctx context.Context, req *pb.SubmitJobRequest) (*pb.SubmitJobResponse, error) {
-	// Validate required fields
-	if req.Id == "" {
-		return nil, status.Error(codes.InvalidArgument, "job ID is required")
-	}
-	if req.Cost <= 0 {
-		return nil, status.Error(codes.InvalidArgument, "cost must be positive")
-	}
-
-	job := &job.Job{
-		ID:       req.Id,
-		Priority: int(req.Priority),
-		Cost:     int(req.Cost),
-		OutputCh: make(chan string),
-		JobType:  req.JobType,
-	}
-
-	if err := n.scheduler.Submit(job); err != nil {
-		log.Printf("[%s] SubmitJob id=%s rejected: %v", n.ID, req.Id, err)
-		return &pb.SubmitJobResponse{
-			Id:     req.Id,
-			Status: "rejected",
-			Reason: err.Error(),
-		}, nil
-	}
-
-	log.Printf("[%s] SubmitJob id=%s priority=%d cost=%d",
-		n.ID, req.Id, req.Priority, req.Cost)
-
-	return &pb.SubmitJobResponse{
-		Id:     req.Id,
-		Status: "pending",
-	}, nil
-}
-
-// RunJob is a handler for a streaming request
-func (n *Node) RunJob(req *pb.RunJobRequest, stream grpc.ServerStreamingServer[pb.RunJobResponse]) error {
-	if req.Id == "" {
-		return status.Error(codes.InvalidArgument, "job ID is required")
-	}
-
-	job := &job.Job{
-		ID:       req.Id,
-		Priority: int(req.Priority),
-		Cost:     int(req.Cost),
-		OutputCh: make(chan string),
-		JobType:  req.JobType,
-	}
-
-	if err := n.scheduler.Submit(job); err != nil {
-		return status.Errorf(codes.ResourceExhausted, "rejected: %v", err)
-	}
-
-	// Job is queued
-	stream.Send(&pb.RunJobResponse{
-		JobId: req.Id,
-		Event: &pb.RunJobResponse_Queued{Queued: &pb.JobQueued{}},
-	})
-
-	for token := range job.OutputCh {
-		stream.Send(&pb.RunJobResponse{
-			JobId: req.Id,
-			Event: &pb.RunJobResponse_Chunk{Chunk: &pb.OutputChunk{Token: token}},
+	if cfg.Scheduler != nil {
+		n.Scheduler = core.New(core.Config{
+			CapacityPerWorker: cfg.Scheduler.CapacityPerWorker,
+			TickInterval:      cfg.Scheduler.TickInterval,
+			MaxPendingJobs:    cfg.Scheduler.MaxPendingJobs,
 		})
+		n.SchedSrv = core.NewServer(n.Scheduler)
 	}
 
-	if job.Err == nil {
-		stream.Send(&pb.RunJobResponse{
-			JobId: req.Id,
-			Event: &pb.RunJobResponse_Completed{Completed: &pb.JobCompleted{}},
-		})
-	} else {
-		stream.Send(&pb.RunJobResponse{
-			JobId: req.Id,
-			Event: &pb.RunJobResponse_Failed{Failed: &pb.JobFailed{}},
-		})
+	return n
+}
+
+func buildStore(kind StoreKind, dataPath, defaultID string) (storage.Store, error) {
+	switch kind {
+	case StoreMem:
+		return memstore.NewMemStore()
+	case StoreLSM:
+		if dataPath == "" {
+			dataPath = filepath.Join("data", "nodes", defaultID)
+		}
+		return lsm.NewLSM(dataPath)
 	}
+	return memstore.NewMemStore()
+}
+
+func (n *Node) Start(ctx context.Context) error {
+	if n.Scheduler != nil {
+		n.Scheduler.Start()
+	}
+
+	n.grpcSrv = grpc.NewServer()
+	pb.RegisterClusterServiceServer(n.grpcSrv, n.Cluster)
+	if n.KV != nil {
+		pb.RegisterKVServiceServer(n.grpcSrv, n.KV)
+	}
+	if n.SchedSrv != nil {
+		pb.RegisterSchedulerServiceServer(n.grpcSrv, n.SchedSrv)
+	}
+	reflection.Register(n.grpcSrv)
+
+	lis, err := net.Listen("tcp", ":"+n.Config.Port)
+	if err != nil {
+		return err
+	}
+	log.Printf("[%s] gRPC server listening on :%s", n.Config.ID, n.Config.Port)
+	go n.grpcSrv.Serve(lis)
+
+	interval := n.Config.GossipInterval
+	if interval == 0 {
+		interval = 5 * time.Second
+	}
+	go n.Cluster.Start(ctx, interval)
 
 	return nil
 }
 
-// GetJobStatus RPC - returns the current status of a job
-func (n *Node) GetJobStatus(ctx context.Context, req *pb.JobStatusRequest) (*pb.JobStatusResponse, error) {
-	job, ok := n.scheduler.GetJob(req.Id)
-	if !ok {
-		return &pb.JobStatusResponse{
-			Id:     req.Id,
-			Status: "unknown",
-		}, nil
+func (n *Node) Stop() {
+	if n.grpcSrv != nil {
+		n.grpcSrv.GracefulStop()
 	}
-
-	return &pb.JobStatusResponse{
-		Id:       job.ID,
-		Status:   job.Status.String(),
-		WorkerId: job.WorkerID,
-		Priority: int32(job.Priority),
-		Cost:     int32(job.Cost),
-	}, nil
-}
-
-// ListJobs RPC - returns a summary of all jobs known to the scheduler
-func (n *Node) ListJobs(ctx context.Context, req *pb.ListJobsRequest) (*pb.ListJobsResponse, error) {
-	jobs := n.scheduler.GetAllJobs()
-	summaries := make([]*pb.JobSummary, len(jobs))
-	for i, job := range jobs {
-		summaries[i] = &pb.JobSummary{
-			Id:       job.ID,
-			Status:   job.Status.String(),
-			Priority: int32(job.Priority),
-			Cost:     int32(job.Cost),
-			WorkerId: job.WorkerID,
-		}
+	if n.Scheduler != nil {
+		n.Scheduler.Stop()
 	}
-
-	return &pb.ListJobsResponse{
-		Jobs: summaries,
-	}, nil
-}
-
-// StartGossip begins the background gossip loop.
-// It periodically pings a random peer to exchange peer info.
-// Cancel the context to stop the loop.
-func (n *Node) StartGossip(ctx context.Context, interval time.Duration) {
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-
-	log.Printf("[%s] Starting gossip with interval %v", n.ID, interval)
-
-	for {
-		select {
-		case <-ctx.Done():
-			log.Printf("[%s] Gossip stopped", n.ID)
-			return
-		case <-ticker.C:
-			n.gossipOnce()
-		}
-	}
-}
-
-// getConn returns a cached connection or creates a new one.
-func (n *Node) getConn(addr string) (*grpc.ClientConn, error) {
-	n.connMu.RLock()
-	conn, ok := n.conns[addr]
-	n.connMu.RUnlock()
-
-	if ok {
-		return conn, nil
-	}
-
-	// Create new connection
-	n.connMu.Lock()
-	defer n.connMu.Unlock()
-
-	// Double-check after acquiring write lock
-	if conn, ok := n.conns[addr]; ok {
-		return conn, nil
-	}
-
-	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		return nil, err
-	}
-
-	n.conns[addr] = conn
-	return conn, nil
-}
-
-// closeConn removes and closes a connection (e.g., when peer is dead).
-func (n *Node) closeConn(addr string) {
-	n.connMu.Lock()
-	defer n.connMu.Unlock()
-
-	if conn, ok := n.conns[addr]; ok {
-		conn.Close()
-		delete(n.conns, addr)
-	}
-}
-
-// gossipOnce increments heartbeat, picks a random peer, and exchanges peer info.
-func (n *Node) gossipOnce() {
-	// Step 1: Increment our own heartbeat
-	newHb := n.incrementHeartbeat()
-	log.Printf("[%s] Heartbeat: %d", n.ID, newHb)
-
-	// Step 2: Pick a random peer
-	peerID, peerAddr := n.pickRandomPeer()
-	if peerAddr == "" {
-		return // no peers to gossip with
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-
-	// Step 3: Get or create connection to peer
-	conn, err := n.getConn(peerAddr)
-	if err != nil {
-		log.Printf("[%s] Failed to connect to %s: %v", n.ID, peerAddr, err)
-		if n.peers.IncrementStaleCount(peerID) {
-			n.maybeRebalanceRing()
-		}
-		return
-	}
-
-	client := pb.NewNodeServiceClient(conn)
-
-	// Step 4: Send ping with our peer infos
-	resp, err := client.Ping(ctx, &pb.PingRequest{
-		NodeId: n.ID,
-		Peers:  toProtoPeers(n.getPeerInfosWithSelf()),
-	})
-	if err != nil {
-		log.Printf("[%s] Ping to %s failed: %v", n.ID, peerAddr, err)
-		n.closeConn(peerAddr) // close bad connection
-		if n.peers.IncrementStaleCount(peerID) {
-			n.maybeRebalanceRing()
-		}
-		return
-	}
-
-	// Step 5: Process response - update peer info and stale counts
-	responsePeers := fromProtoPeers(resp.Peers)
-	peerMarkedDead := n.peers.ProcessResponse(responsePeers)
-
-	if peerMarkedDead {
-		n.maybeRebalanceRing()
-	}
-
-	log.Printf("[%s] Gossiped with %s, now know %d peers (%d alive)",
-		n.ID, peerID, len(n.peers.GetAll()), len(n.peers.GetAlive()))
-}
-
-// pickRandomPeer returns a random peer ID and address, excluding self.
-func (n *Node) pickRandomPeer() (string, string) {
-	peers := n.peers.GetAliveForGossip() // includes unresolved seeds
-	candidates := make([]cluster.Peer, 0, len(peers))
-
-	for _, p := range peers {
-		if p.ID != n.ID && p.Addr != n.Addr {
-			candidates = append(candidates, p)
-		}
-	}
-
-	if len(candidates) == 0 {
-		return "", ""
-	}
-
-	chosen := candidates[rand.Intn(len(candidates))]
-	return chosen.ID, chosen.Addr
 }

@@ -1,0 +1,95 @@
+syntax = "proto3";
+
+package node;
+
+option go_package = "./proto";
+
+service SchedulerService {
+  rpc SubmitJob(SubmitJobRequest) returns (SubmitJobResponse);
+  rpc GetJobStatus(JobStatusRequest) returns (JobStatusResponse);
+  rpc ListJobs(ListJobsRequest) returns (ListJobsResponse);
+  rpc RunJob(RunJobRequest) returns (stream RunJobResponse);
+}
+
+message PromptContinuation {
+  string prompt = 1;
+}
+
+message JobType {
+  oneof type {
+    PromptContinuation prompt_continuation = 100;
+  }
+}
+
+message SubmitJobRequest {
+  string id = 1;
+  int32 priority = 2;
+  int32 cost = 3;
+  JobType job_type = 4;
+}
+
+message SubmitJobResponse {
+  string id = 1;
+  string status = 2;
+  string reason = 3;
+}
+
+message JobStatusRequest {
+  string id = 1;
+}
+
+message JobStatusResponse {
+  string id = 1;
+  string status = 2;
+  string worker_id = 3;
+  int32 priority = 4;
+  int32 cost = 5;
+}
+
+message ListJobsRequest {}
+
+message ListJobsResponse {
+  repeated JobSummary jobs = 1;
+}
+
+message JobSummary {
+  string id = 1;
+  string status = 2;
+  int32 priority = 3;
+  int32 cost = 4;
+  string worker_id = 5;
+}
+
+message RunJobRequest {
+  string id = 1;
+  int32 priority = 2;
+  int32 cost = 3;
+  JobType job_type = 4;
+}
+
+message RunJobResponse {
+  string job_id = 1;
+  oneof event {
+    JobQueued queued = 100;
+    JobStarted started = 101;
+    OutputChunk chunk = 102;
+    JobCompleted completed = 103;
+    JobFailed failed = 104;
+  }
+}
+
+message JobQueued {}
+
+message JobStarted {
+  string worker_id = 1;
+}
+
+message OutputChunk {
+  string token = 1;
+}
+
+message JobCompleted {}
+
+message JobFailed {
+  string error = 1;
+}

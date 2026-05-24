@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"log"
-	"net"
 	"os"
 	"os/signal"
 	"syscall"
@@ -11,47 +10,44 @@ import (
 
 	"github.com/chorus/config"
 	"github.com/chorus/node"
-	pb "github.com/chorus/proto"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/reflection"
 )
 
 func main() {
-	// Load configuration
 	cfg, err := config.Load("config.yaml")
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}
 
-	n := node.NewLSMBasedNode(getEnv("NODE_ID", "node1"), getEnv("PORT", "8010"), cfg.Seeds)
-
-	lis, err := net.Listen("tcp", ":"+n.Port)
-	if err != nil {
-		log.Fatalf("[%s] Failed to listen: %v", n.ID, err)
+	storeKind := node.StoreLSM
+	if getEnv("STORE", "lsm") == "mem" {
+		storeKind = node.StoreMem
 	}
 
-	grpcServer := grpc.NewServer()
-	pb.RegisterNodeServiceServer(grpcServer, n)
-	reflection.Register(grpcServer)
+	n := node.New(node.Config{
+		ID:    getEnv("NODE_ID", "node1"),
+		Port:  getEnv("PORT", "8010"),
+		Seeds: cfg.Seeds,
+		KV: &node.KVClusterConfig{
+			Store: storeKind,
+		},
+		Scheduler: &node.SchedulerConfig{
+			CapacityPerWorker: 10,
+			TickInterval:      500 * time.Millisecond,
+			MaxPendingJobs:    1000,
+		},
+	})
 
-	log.Printf("[%s] gRPC server listening on :%s", n.ID, n.Port)
-
-	// Start gossip in background
 	ctx, cancel := context.WithCancel(context.Background())
-	go n.StartGossip(ctx, 5*time.Second)
-	go func() {
-		sigCh := make(chan os.Signal, 1)
-		signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
-		<-sigCh
-		log.Printf("[%s] Shutting down gracefully...", n.ID)
-		cancel() // stop gossip
-		grpcServer.GracefulStop()
-	}()
-
-	// Start serving
-	if err := grpcServer.Serve(lis); err != nil {
-		log.Fatalf("[%s] Failed to serve: %v", n.ID, err)
+	if err := n.Start(ctx); err != nil {
+		log.Fatalf("Failed to start node: %v", err)
 	}
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+	<-sigCh
+	log.Printf("Shutting down gracefully...")
+	cancel()
+	n.Stop()
 }
 
 func getEnv(key, defaultValue string) string {
