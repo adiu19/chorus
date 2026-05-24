@@ -18,9 +18,9 @@ type rootNode struct {
 	backend backend.Backend
 }
 
-// chunkNode represents a single chunk file. Implements Getattr (for stat)
+// blobNode represents a single blob file. Implements Getattr (for stat)
 // and Read (for the actual bytes).
-type chunkNode struct {
+type blobNode struct {
 	fs.Inode
 	backend backend.Backend
 	hash    []byte
@@ -30,9 +30,10 @@ type chunkNode struct {
 var _ = (fs.InodeEmbedder)((*rootNode)(nil))
 var _ = (fs.NodeLookuper)((*rootNode)(nil))
 
-var _ = (fs.InodeEmbedder)((*chunkNode)(nil))
-var _ = (fs.NodeGetattrer)((*chunkNode)(nil))
-var _ = (fs.NodeReader)((*chunkNode)(nil))
+var _ = (fs.InodeEmbedder)((*blobNode)(nil))
+var _ = (fs.NodeGetattrer)((*blobNode)(nil))
+var _ = (fs.NodeOpener)((*blobNode)(nil))
+var _ = (fs.NodeReader)((*blobNode)(nil))
 
 func (r *rootNode) Lookup(ctx context.Context, name string, out *gofuse.EntryOut) (*fs.Inode, syscall.Errno) {
 	hash, err := hex.DecodeString(name)
@@ -47,12 +48,16 @@ func (r *rootNode) Lookup(ctx context.Context, name string, out *gofuse.EntryOut
 
 	out.Size = uint64(info.Size)
 	out.Mode = 0644
-	child := &chunkNode{backend: r.backend, hash: hash}
+	child := &blobNode{backend: r.backend, hash: hash}
 	return r.NewInode(ctx, child, fs.StableAttr{Mode: syscall.S_IFREG}), 0
 
 }
 
-func (c *chunkNode) Getattr(ctx context.Context, fh fs.FileHandle, out *gofuse.AttrOut) syscall.Errno {
+func (c *blobNode) Open(ctx context.Context, flags uint32) (fs.FileHandle, uint32, syscall.Errno) {
+	return nil, 0, 0
+}
+
+func (c *blobNode) Getattr(ctx context.Context, fh fs.FileHandle, out *gofuse.AttrOut) syscall.Errno {
 	info, err := c.backend.Stat(c.hash)
 	if err != nil {
 		return syscall.ENOENT
@@ -62,7 +67,7 @@ func (c *chunkNode) Getattr(ctx context.Context, fh fs.FileHandle, out *gofuse.A
 	return 0
 }
 
-func (c *chunkNode) Read(ctx context.Context, fh fs.FileHandle, dest []byte, off int64) (gofuse.ReadResult, syscall.Errno) {
+func (c *blobNode) Read(ctx context.Context, fh fs.FileHandle, dest []byte, off int64) (gofuse.ReadResult, syscall.Errno) {
 	data, err := c.backend.Fetch(c.hash)
 	if err != nil {
 		return nil, syscall.EIO
