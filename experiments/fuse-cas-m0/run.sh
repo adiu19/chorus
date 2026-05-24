@@ -10,6 +10,7 @@ BLOBS=${BLOBS:-1000}
 BLOB_SIZE=${BLOB_SIZE:-4096}
 SEED=${SEED:-42}
 OPS=${OPS:-1000}
+TRIALS=${TRIALS:-10}
 CONCURRENCY_LEVELS=${CONCURRENCY_LEVELS:-"1 4 16 64 256"}
 
 FUSE_MOUNT=${FUSE_MOUNT:-/tmp/cas-fuse}
@@ -56,18 +57,20 @@ ls "$FUSE_MOUNT" > /dev/null
 echo "[run.sh] populating tmpfs baseline at $TMPFS_DIR"
 "$REPO_ROOT/bin/populate-tmpfs" -dir "$TMPFS_DIR" -blobs "$BLOBS" -size "$BLOB_SIZE" -seed "$SEED"
 
-echo "[run.sh] sweeping concurrency: $CONCURRENCY_LEVELS"
+echo "[run.sh] sweeping concurrency=[$CONCURRENCY_LEVELS] x trials=$TRIALS"
 for c in $CONCURRENCY_LEVELS; do
-    echo "  - c=$c FUSE"
-    "$REPO_ROOT/bin/fuse-loadgen" \
-        -mount "$FUSE_MOUNT" -concurrency "$c" -ops "$OPS" \
-        -blobs "$BLOBS" -size "$BLOB_SIZE" -seed "$SEED" \
-        -label fuse -out "$RESULTS_FILE"
-    echo "  - c=$c tmpfs"
-    "$REPO_ROOT/bin/fuse-loadgen" \
-        -mount "$TMPFS_DIR" -concurrency "$c" -ops "$OPS" \
-        -blobs "$BLOBS" -size "$BLOB_SIZE" -seed "$SEED" \
-        -label tmpfs -out "$RESULTS_FILE"
+    for t in $(seq 1 "$TRIALS"); do
+        echo "  - c=$c trial=$t FUSE"
+        "$REPO_ROOT/bin/fuse-loadgen" \
+            -mount "$FUSE_MOUNT" -concurrency "$c" -ops "$OPS" \
+            -blobs "$BLOBS" -size "$BLOB_SIZE" -seed "$SEED" -trial "$t" \
+            -label fuse -out "$RESULTS_FILE"
+        echo "  - c=$c trial=$t tmpfs"
+        "$REPO_ROOT/bin/fuse-loadgen" \
+            -mount "$TMPFS_DIR" -concurrency "$c" -ops "$OPS" \
+            -blobs "$BLOBS" -size "$BLOB_SIZE" -seed "$SEED" -trial "$t" \
+            -label tmpfs -out "$RESULTS_FILE"
+    done
 done
 
 echo "[run.sh] results written to $RESULTS_FILE"

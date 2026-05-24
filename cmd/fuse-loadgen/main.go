@@ -22,7 +22,8 @@ func main() {
 	opsPerWorker := flag.Int("ops", 1000, "operations per worker")
 	blobCount := flag.Int("blobs", 1000, "total blobs available in the mount")
 	blobSize := flag.Int("size", 4096, "blob size in bytes (must match populate)")
-	seed := flag.Int64("seed", 42, "seed used to populate the mount")
+	seed := flag.Int64("seed", 42, "seed used to populate the mount (must match populate)")
+	trial := flag.Int("trial", 0, "trial index (mixes into per-worker rng so trials sample different access patterns)")
 	out := flag.String("out", "", "append-mode JSONL output path (stdout if empty)")
 	label := flag.String("label", "fuse", "label written into each JSONL row (e.g., fuse, tmpfs)")
 	flag.Parse()
@@ -45,7 +46,7 @@ func main() {
 		wg.Add(1)
 		go func(wid int) {
 			defer wg.Done()
-			rng := rand.New(rand.NewSource(int64(wid) + *seed))
+			rng := rand.New(rand.NewSource(int64(wid) + *seed + int64(*trial)*1_000_003))
 			buf := make([]byte, *blobSize)
 			for i := 0; i < *opsPerWorker; i++ {
 				h := hashes[rng.Intn(len(hashes))]
@@ -79,6 +80,7 @@ func main() {
 
 	emit(*out, result{
 		Label:       *label,
+		Trial:       *trial,
 		Op:          "open",
 		Concurrency: *concurrency,
 		Ops:         len(allOpen),
@@ -88,6 +90,7 @@ func main() {
 	})
 	emit(*out, result{
 		Label:       *label,
+		Trial:       *trial,
 		Op:          "read",
 		Concurrency: *concurrency,
 		Ops:         len(allRead),
@@ -98,13 +101,14 @@ func main() {
 }
 
 type result struct {
-	Label       string         `json:"label"`
-	Op          string         `json:"op"`
-	Concurrency int            `json:"concurrency"`
-	Ops         int            `json:"ops"`
-	Errors      int            `json:"errors"`
+	Label       string           `json:"label"`
+	Trial       int              `json:"trial"`
+	Op          string           `json:"op"`
+	Concurrency int              `json:"concurrency"`
+	Ops         int              `json:"ops"`
+	Errors      int              `json:"errors"`
 	Percentiles map[string]int64 `json:"percentiles_ns"`
-	ElapsedNs   int64          `json:"elapsed_ns"`
+	ElapsedNs   int64            `json:"elapsed_ns"`
 }
 
 func emit(path string, r result) {
