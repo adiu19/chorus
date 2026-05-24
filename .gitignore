@@ -1,6 +1,6 @@
 # Binary
 chorus-node
-
+m0-daemon
 # Docs (personal notes)
 docs/ROADMAP.md
 
@@ -13,3 +13,5 @@ data/
 docs/*
 
 learnings/
+bin/
+experiments/*/results/
