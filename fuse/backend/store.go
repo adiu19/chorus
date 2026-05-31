@@ -41,4 +41,9 @@ func (sb *StoreBackend) Has(hash []byte) bool {
 
 }
 
+func (sb *StoreBackend) Close() error {
+	// no-op for this
+	return nil
+}
+
 var _ Backend = (*StoreBackend)(nil)
