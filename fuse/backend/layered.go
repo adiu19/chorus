@@ -1,56 +1,64 @@
 package backend
 
 import (
-	"fmt"
+	"errors"
+	"log"
 
 	"github.com/chorus/storage"
 )
 
 // LayeredBackend provides a staggered approach to fetch data
 type LayeredBackend struct {
-	cacheFill       storage.Store // optional — writes go here on hit from deeper layers; nil = no fill
-	orderedBackends []Backend
+	local  storage.Store
+	peer   *PeerBackend
+	origin *RemoteKVServerBackend
 }
 
 // NewLayeredBackend instantiates a layered backend with an ordered list of backend preferences
-func NewLayeredBackend(orderedBackends []Backend, cacheFill storage.Store) (*LayeredBackend, error) {
+func NewLayeredBackend(local storage.Store, peer *PeerBackend, origin *RemoteKVServerBackend) (*LayeredBackend, error) {
 	return &LayeredBackend{
-		cacheFill:       cacheFill,
-		orderedBackends: orderedBackends,
+		local:  local,
+		peer:   peer,
+		origin: origin,
 	}, nil
 }
 
 // Close cleans up the remote connection
 func (sb *LayeredBackend) Close() error {
-	var errToReturn error
-	for _, b := range sb.orderedBackends {
-		err := b.Close()
-		if err != nil {
-			errToReturn = err
-		}
-	}
-
-	return errToReturn
+	var errToReturn1, errToReturn2 error
+	errToReturn1 = sb.peer.Close()
+	errToReturn2 = sb.origin.Close()
+	return errors.Join(errToReturn1, errToReturn2)
 }
 
 // Fetch returns the data bytes against an input hash
 func (sb *LayeredBackend) Fetch(hash []byte) ([]byte, error) {
-	for idx, backend := range sb.orderedBackends {
-		res, err := backend.Fetch(hash)
-		if err != nil {
-			fmt.Printf("failed to fetch from backend %v", err)
-		} else {
-			if idx > 0 && sb.cacheFill != nil { // assumes that layer 0 is the in-memory backend
-				cfErr := sb.cacheFill.Insert(hash, res)
-				if cfErr != nil {
-					fmt.Printf("failed to cache fill our in-memory layer : %v \n", cfErr)
-				}
-			}
-			return res, nil
-		}
+	if res, err := sb.local.Get(hash); err == nil && res != nil {
+		return res, nil
+	}
+
+	if res, err := sb.peer.Fetch(hash); err == nil {
+		go sb.recordHit(hash, res)
+		return res, nil
+	}
+
+	if res, err := sb.origin.Fetch(hash); err == nil {
+		go sb.recordHit(hash, res)
+		return res, nil
 	}
 
 	return nil, ErrNotFound
+}
+
+// recordHit caches the freshly-fetched bytes locally and announces to the cluster.
+// Runs in a goroutine; failures are logged but don't affect the Fetch result.
+func (sb *LayeredBackend) recordHit(hash, value []byte) {
+	if err := sb.local.Insert(hash, value); err != nil {
+		log.Printf("cache-fill: %v", err)
+	}
+	if err := sb.peer.Announce(hash); err != nil {
+		log.Printf("announce: %v", err)
+	}
 }
 
 func (sb *LayeredBackend) Stat(hash []byte) (Info, error) {
